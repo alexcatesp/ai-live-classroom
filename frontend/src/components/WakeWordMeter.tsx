@@ -1,0 +1,69 @@
+/**
+ * Live view of the detector (risk R-1).
+ *
+ * The point of this panel is measurement: it shows the scores against the
+ * threshold so the sensitivity can be tuned in a real classroom rather than
+ * guessed at a desk.
+ */
+
+import type { ListeningStatus } from "../lib/types";
+
+interface Props {
+  status: ListeningStatus | null;
+}
+
+export function WakeWordMeter({ status }: Props) {
+  if (!status || !status.listening) {
+    return (
+      <section className="panel" aria-label="Palabra de activación">
+        <h2>Palabra de activación</h2>
+        <p className="muted">Disponible cuando la clase esté en escucha pasiva.</p>
+      </section>
+    );
+  }
+
+  const threshold = status.threshold ?? 0;
+  const scores = status.recent_scores;
+  const latest = scores.length > 0 ? (scores[scores.length - 1] ?? 0) : 0;
+  const peak = scores.length > 0 ? Math.max(...scores) : 0;
+
+  return (
+    <section className="panel" aria-label="Palabra de activación">
+      <h2>Palabra de activación</h2>
+      <p className="muted">
+        Detectando «{status.phrase}» con umbral {threshold.toFixed(2)}.
+      </p>
+
+      <div
+        className="meter"
+        role="meter"
+        aria-valuenow={Number(latest.toFixed(2))}
+        aria-valuemin={0}
+        aria-valuemax={1}
+        aria-label="Nivel actual del detector"
+      >
+        <div className="meter-fill" style={{ width: `${Math.min(latest, 1) * 100}%` }} />
+        <div className="meter-threshold" style={{ left: `${Math.min(threshold, 1) * 100}%` }} />
+      </div>
+
+      <dl className="stats">
+        <div>
+          <dt>Activaciones</dt>
+          <dd>{status.activations}</dd>
+        </div>
+        <div>
+          <dt>Interrupciones</dt>
+          <dd>{status.interruptions}</dd>
+        </div>
+        <div>
+          <dt>Pico reciente</dt>
+          <dd>{peak.toFixed(2)}</dd>
+        </div>
+        <div>
+          <dt>Escuchando</dt>
+          <dd>{Math.round(status.seconds_listening)} s</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}

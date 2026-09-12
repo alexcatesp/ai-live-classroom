@@ -1,0 +1,307 @@
+/* A classroom projector is often washed out, so contrast is kept high and
+   type large enough to read from a few metres away. */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #10131a;
+  --panel: #181c26;
+  --border: #2a3040;
+  --text: #eef1f7;
+  --muted: #9aa3b8;
+
+  --tone-neutral: #6b7692;
+  --tone-listening: #2fa36b;
+  --tone-active: #3b82f6;
+  --tone-busy: #a855f7;
+  --tone-warning: #d99b16;
+  --tone-danger: #dc4b4b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.panel-header h2 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+/* -- state ---------------------------------------------------------------- */
+
+.state-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--tone-neutral);
+  color: #fff;
+}
+
+.state-badge.tone-neutral { background: var(--tone-neutral); }
+.state-badge.tone-listening { background: var(--tone-listening); }
+.state-badge.tone-active { background: var(--tone-active); }
+.state-badge.tone-busy { background: var(--tone-busy); }
+.state-badge.tone-warning { background: var(--tone-warning); color: #1b1b1b; }
+.state-badge.tone-danger { background: var(--tone-danger); }
+
+.state-label {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.state-code {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.state-description {
+  margin: 10px 0;
+}
+
+.mic-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.mic-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.mic-on .mic-dot {
+  background: var(--tone-danger);
+  box-shadow: 0 0 0 4px rgba(220, 75, 75, 0.25);
+}
+
+.mic-on { color: var(--tone-danger); }
+.mic-off { color: var(--muted); }
+
+/* -- controls ------------------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+button {
+  font: inherit;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #232939;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #3d4660;
+}
+
+button.primary {
+  background: var(--tone-listening);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: transparent;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* -- diagnostics ---------------------------------------------------------- */
+
+.check-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.check {
+  border-left: 4px solid var(--tone-neutral);
+  border-radius: 6px;
+  background: #12161f;
+  padding: 10px 14px;
+}
+
+.check-ok { border-left-color: var(--tone-listening); }
+.check-warning { border-left-color: var(--tone-warning); }
+.check-failed { border-left-color: var(--tone-danger); }
+.check-skipped { border-left-color: var(--muted); }
+
+.check-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.check-status { font-size: 0.85rem; }
+.status-ok { color: var(--tone-listening); }
+.status-warning { color: var(--tone-warning); }
+.status-failed { color: var(--tone-danger); }
+.status-skipped { color: var(--muted); }
+
+.check-detail { margin: 4px 0 0; }
+
+.check-remedy {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.summary-ok { color: var(--tone-listening); font-weight: 600; }
+.summary-failed { color: var(--tone-danger); font-weight: 600; }
+
+.warning-line {
+  color: var(--tone-danger);
+  font-weight: 600;
+  margin: 8px 0;
+}
+
+/* -- wake word meter ------------------------------------------------------ */
+
+.meter {
+  position: relative;
+  height: 22px;
+  border-radius: 6px;
+  background: #12161f;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--tone-active);
+  transition: width 120ms linear;
+}
+
+.meter-threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--tone-warning);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.stats dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.stats dd {
+  margin: 2px 0 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+/* -- settings ------------------------------------------------------------- */
+
+.field {
+  margin-bottom: 18px;
+}
+
+.field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #12161f;
+  color: var(--text);
+  min-width: 240px;
+  flex: 1;
+}
+
+input[type="range"] {
+  width: 100%;
+  max-width: 420px;
+}

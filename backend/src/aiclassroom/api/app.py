@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from .. import __version__
 from ..audio.devices import probe_devices
+from ..config.secrets import WrongPassphrase
 from ..config.settings import Settings
 from ..config.store import SettingsStore
 from ..diagnostics.runner import DiagnosticsReport, DiagnosticsRunner
@@ -33,6 +34,7 @@ from .schemas import (
     SettingsOut,
     StateOut,
     TransitionOut,
+    UnlockIn,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,25 +206,40 @@ def create_app(context: AppContext) -> FastAPI:
     async def devices() -> DevicesOut:
         return DevicesOut.of(await asyncio.to_thread(probe_devices))
 
+    def settings_payload(settings: Settings | None = None) -> SettingsOut:
+        return SettingsOut(
+            settings=settings if settings is not None else context.store.load(),
+            api_key_configured=context.store.has_api_key(),
+            requires_passphrase=context.store.requires_passphrase,
+            unlocked=context.store.unlocked,
+        )
+
     @app.get("/api/settings", dependencies=guarded, response_model=SettingsOut)
     async def get_settings() -> SettingsOut:
-        return SettingsOut(
-            settings=context.store.load(), api_key_configured=context.store.has_api_key()
-        )
+        return settings_payload()
 
     @app.put("/api/settings", dependencies=guarded, response_model=SettingsOut)
     async def put_settings(body: Settings) -> SettingsOut:
         context.store.save(body)
-        return SettingsOut(settings=body, api_key_configured=context.store.has_api_key())
+        return settings_payload(body)
 
     @app.post("/api/settings/api-key", dependencies=guarded, status_code=204)
     async def put_api_key(body: ApiKeyIn) -> None:
         try:
-            context.store.set_api_key(body.api_key)
+            context.store.set_api_key(body.api_key, passphrase=body.passphrase)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - DPAPI can refuse
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/api/settings/unlock", dependencies=guarded, response_model=SettingsOut)
+    async def unlock(body: UnlockIn) -> SettingsOut:
+        try:
+            # scrypt is deliberately slow, so it must not block the event loop.
+            await asyncio.to_thread(context.store.unlock, body.passphrase)
+        except WrongPassphrase as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        return settings_payload()
 
     @app.delete("/api/settings/api-key", dependencies=guarded, status_code=204)
     async def delete_api_key() -> None:

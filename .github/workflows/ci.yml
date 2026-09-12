@@ -201,6 +201,20 @@ jobs:
                    Measure-Object -Property Length -Sum).Sum / 1MB
           Write-Host ("Tamano de la carpeta portable: {0:N0} MB" -f $size)
 
+      # Risk R-7: the build is unsigned, so whoever downloads the artifact has
+      # no way to tell it arrived intact. A checksum file is the minimum.
+      - name: Sumas de verificación
+        run: |
+          $staging = "release\AI-Classroom-Live"
+          $checksums = "$staging\SHA256SUMS.txt"
+          Get-ChildItem $staging -Recurse -File |
+            Where-Object { $_.FullName -ne $checksums } |
+            ForEach-Object {
+              $relative = $_.FullName.Substring((Resolve-Path $staging).Path.Length + 1)
+              "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $relative
+            } | Set-Content $checksums -Encoding ASCII
+          Write-Host "$((Get-Content $checksums).Count) archivos con suma de verificacion."
+
       - uses: actions/upload-artifact@v4
         with:
           name: AI-Classroom-Live-portable

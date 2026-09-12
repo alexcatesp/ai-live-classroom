@@ -257,3 +257,88 @@ def test_the_command_line_defaults_to_an_ephemeral_port():
 
 def test_the_selftest_flag_is_recognised():
     assert parse_args(["--selftest"]).selftest is True
+
+
+# -- portable key over HTTP (risk R-5) -----------------------------------
+
+
+def test_a_key_without_a_passphrase_stays_on_this_machine(client):
+    client.post("/api/settings/api-key", json={"api_key": "sk-local"})
+    body = client.get("/api/settings").json()
+
+    assert body["api_key_configured"] is True
+    assert body["requires_passphrase"] is False
+    assert body["unlocked"] is True
+
+
+def test_a_key_with_a_passphrase_is_reported_as_portable(client):
+    response = client.post(
+        "/api/settings/api-key", json={"api_key": "sk-portatil", "passphrase": "mi frase"}
+    )
+    assert response.status_code == 204
+
+    body = client.get("/api/settings").json()
+    assert body["requires_passphrase"] is True
+    assert body["unlocked"] is True  # still unlocked in this process
+
+
+def test_a_sealed_key_can_be_unlocked(client, store):
+    store.set_api_key("sk-portatil", passphrase="mi frase")
+    store.lock()
+
+    assert client.get("/api/settings").json()["unlocked"] is False
+
+    response = client.post("/api/settings/unlock", json={"passphrase": "mi frase"})
+    assert response.status_code == 200
+    assert response.json()["unlocked"] is True
+
+
+def test_a_wrong_passphrase_is_rejected_with_a_clear_status(client, store):
+    store.set_api_key("sk-portatil", passphrase="la buena")
+    store.lock()
+
+    response = client.post("/api/settings/unlock", json={"passphrase": "la mala"})
+    assert response.status_code == 401
+    assert "contraseña" in response.json()["detail"].lower()
+
+
+def test_the_passphrase_is_never_echoed_back(client):
+    client.post(
+        "/api/settings/api-key", json={"api_key": "sk-portatil", "passphrase": "mi frase"}
+    )
+    assert "mi frase" not in client.get("/api/settings").text
+
+
+def test_a_sealed_key_fails_the_diagnostics_with_the_right_remedy(client, store):
+    """Not the same problem as having no key, so not the same instruction."""
+    store.set_api_key("sk-portatil", passphrase="mi frase")
+    store.lock()
+
+    report = client.post("/api/diagnostics/run").json()
+    api_check = next(result for result in report["results"] if result["id"] == "api_key")
+
+    assert api_check["status"] == "failed"
+    assert "contraseña" in api_check["remedy"]
+
+
+def test_listening_status_reports_the_active_defences(client):
+    client.post("/api/class/prepare")
+    client.post("/api/class/start")
+
+    body = client.get("/api/listening").json()
+    assert body["echo_suppressions"] == 0
+    assert body["vad_enabled"] is False  # the scripted detector has no VAD
+    assert body["confirmation_frames"] == 1
+
+
+def test_the_selftest_checks_the_things_that_only_break_once_packaged():
+    """Each of these looks fine in development and fails in a classroom."""
+    from aiclassroom.main import secret_store_works, wakeword_engine_available
+
+    works, detail = secret_store_works()
+    assert works is True, detail
+
+    # The wake word engine is an optional extra, so only its report is asserted.
+    available, engine_detail = wakeword_engine_available()
+    assert isinstance(available, bool)
+    assert engine_detail

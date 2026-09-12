@@ -134,13 +134,29 @@ export function App() {
   );
 
   const saveApiKey = useCallback(
-    async (apiKey: string) => {
+    async (apiKey: string, passphrase?: string) => {
       if (!client) return;
       setSaving(true);
       setSettingsError(null);
       try {
-        await client.saveApiKey(apiKey);
+        await client.saveApiKey(apiKey, passphrase);
         setSettings(await client.getSettings());
+      } catch (error) {
+        setSettingsError(describe(error));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [client],
+  );
+
+  const unlock = useCallback(
+    async (passphrase: string) => {
+      if (!client) return;
+      setSaving(true);
+      setSettingsError(null);
+      try {
+        setSettings(await client.unlock(passphrase));
       } catch (error) {
         setSettingsError(describe(error));
       } finally {
@@ -220,8 +236,9 @@ export function App() {
         saving={saving}
         error={settingsError}
         onSave={(next) => void saveSettings(next)}
-        onSaveApiKey={(key) => void saveApiKey(key)}
+        onSaveApiKey={(key, passphrase) => void saveApiKey(key, passphrase)}
         onClearApiKey={() => void clearApiKey()}
+        onUnlock={(passphrase) => void unlock(passphrase)}
       />
     </main>
   );

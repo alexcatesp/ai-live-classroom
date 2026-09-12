@@ -11,9 +11,13 @@ dependencies = [
     "httpx>=0.27",
     "numpy>=1.26",
     "sounddevice>=0.5",
+    # AES-GCM for the passphrase-protected API key (risk R-5).
+    "cryptography>=43.0",
 ]
 
 [project.optional-dependencies]
+# Bundled in the portable build; separate so the tests can run without the
+# ONNX runtime on a machine that only lints.
 wakeword = ["openwakeword>=0.6.0"]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.7"]
 

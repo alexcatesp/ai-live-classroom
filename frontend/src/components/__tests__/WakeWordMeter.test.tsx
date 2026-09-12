@@ -9,11 +9,14 @@ function status(overrides: Partial<ListeningStatus> = {}): ListeningStatus {
     listening: true,
     activations: 3,
     interruptions: 1,
+    echo_suppressions: 0,
     frames_processed: 500,
     seconds_listening: 42.4,
     threshold: 0.65,
     recent_scores: [0.1, 0.2, 0.8],
     phrase: "Oye Chat",
+    vad_enabled: true,
+    confirmation_frames: 2,
     ...overrides,
   };
 }
@@ -50,5 +53,34 @@ describe("WakeWordMeter", () => {
   it("copes with an empty score history", () => {
     render(<WakeWordMeter status={status({ recent_scores: [] })} />);
     expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", "0");
+  });
+});
+
+// -- the defences shown live (risks R-1 and R-6) -------------------------
+
+describe("WakeWordMeter, defensas", () => {
+  it("muestra que el filtro de voz está activo", () => {
+    render(<WakeWordMeter status={status()} />);
+    expect(screen.getByText("Filtro de voz activo")).toBeInTheDocument();
+  });
+
+  it("avisa cuando el filtro de voz está desactivado", () => {
+    render(<WakeWordMeter status={status({ vad_enabled: false })} />);
+    expect(screen.getByText("Sin filtro de voz")).toBeInTheDocument();
+  });
+
+  it("muestra la confirmación por frames cuando se exige más de uno", () => {
+    render(<WakeWordMeter status={status({ confirmation_frames: 3 })} />);
+    expect(screen.getByText(/Confirmación: 3 frames/)).toBeInTheDocument();
+  });
+
+  it("no muestra la confirmación cuando basta un frame", () => {
+    render(<WakeWordMeter status={status({ confirmation_frames: 1 })} />);
+    expect(screen.queryByText(/Confirmación/)).not.toBeInTheDocument();
+  });
+
+  it("cuenta los ecos descartados, que es cómo se ajusta el margen", () => {
+    render(<WakeWordMeter status={status({ echo_suppressions: 4 })} />);
+    expect(screen.getByText("Ecos descartados").nextSibling).toHaveTextContent("4");
   });
 });

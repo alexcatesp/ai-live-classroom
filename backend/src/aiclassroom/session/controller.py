@@ -37,11 +37,14 @@ class ListeningStatus:
     listening: bool
     activations: int
     interruptions: int
+    echo_suppressions: int
     frames_processed: int
     seconds_listening: float
     threshold: float | None
     recent_scores: list[float]
     phrase: str | None
+    vad_enabled: bool
+    confirmation_frames: int | None
 
 
 def _default_engine(settings: Settings) -> AudioEngine:
@@ -74,6 +77,8 @@ class SessionController:
             phrase=settings.wake_phrase,
             sensitivity=settings.wake_sensitivity,
             refractory_seconds=settings.wake_refractory_seconds,
+            vad_threshold=settings.wake_vad_threshold,
+            confirmation_frames=settings.wake_confirmation_frames,
         )
 
     # -- lifecycle --------------------------------------------------------
@@ -115,6 +120,7 @@ class SessionController:
                 detector=self._detector,
                 machine=self.machine,
                 on_detection=self._notify_detection,
+                echo_guard_margin=settings.echo_guard_margin,
             )
             try:
                 self._listener.start()
@@ -184,11 +190,14 @@ class SessionController:
             listening=bool(listener and listener.is_listening),
             activations=stats.activations if stats else 0,
             interruptions=stats.interruptions if stats else 0,
+            echo_suppressions=stats.echo_suppressions if stats else 0,
             frames_processed=stats.frames_processed if stats else 0,
             seconds_listening=stats.seconds_listening if stats else 0.0,
             threshold=getattr(detector, "threshold", None),
             recent_scores=detector.recent_scores() if detector else [],
             phrase=detector.phrase if detector else None,
+            vad_enabled=bool(getattr(detector, "vad_enabled", False)),
+            confirmation_frames=getattr(detector, "confirmation_frames", None),
         )
 
     def _notify_detection(self, detection: Detection) -> None:

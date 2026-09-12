@@ -267,14 +267,135 @@ clippy; el de Windows es el que compila contra el backend real.
 
 ---
 
+## Riesgos: estado
+
+Todos los riesgos abiertos de la versión anterior se han atacado. Lo que queda
+pendiente está acotado y es de medición, no de diseño.
+
+### R-1 — Falsos positivos de «Oye Chat» — *mitigado, pendiente de medir en aula*
+
+Tres defensas, de la más barata a la más cara:
+
+1. **Puerta de actividad de voz.** El modelo VAD de Silero corre junto al
+   detector y anula cualquier puntuación que no coincida con una persona
+   hablando. Una silla, una puerta o el ventilador del proyector no pueden
+   despertar al asistente, por mucho que el detector crea haber oído algo.
+2. **Confirmación por frames.** Un solo frame por encima del umbral es un pico,
+   no una frase. Se exigen 2 frames consecutivos (160 ms), configurable.
+3. **Ventana refractaria**, que ya existía, para no contar dos veces la misma
+   activación.
+
+**Medido aquí**, sobre un minuto de ruido sintético con transientes y el motor
+real de openWakeWord, a sensibilidad extrema (0,95):
+
+| Configuración | Falsos por hora |
+|---|---|
+| Sin VAD, sin confirmación | **60** |
+| Con VAD | **0** |
+| Con VAD + confirmación de 2 frames | **0** |
+
+La cifra de 60 es de ruido sintético con un modelo de frase prestado, así que
+vale para comparar mecanismos, no como predicción de un aula. Lo que demuestra
+es que la puerta VAD hace exactamente lo que se espera de ella.
+
+**Lo que falta** es un dato que solo existe en el instituto: graba una hora de
+clase real sin decir la frase y pásala por el banco de medida:
+
+```bash
+python scripts/measure_wakeword.py --models data/models \
+    --negatives grabaciones/aula --positives grabaciones/frase
+```
+
+Devuelve falsos por hora y tasa de detección para cada sensibilidad. El objetivo
+razonable es 0 falsos por hora con detección por encima del 90%. Anota aquí el
+resultado.
+
+### R-2 — Latencia con WebSocket en lugar de WebRTC — *instrumentado*
+
+El diagnóstico mide el tiempo de establecimiento de la sesión Realtime, lo
+muestra en pantalla y avisa por encima de 1,5 segundos. Cubre lo que aporta la
+red del centro: DNS, TCP, TLS y el *upgrade*.
+
+No es la latencia del turno hablado completo, que añade la del modelo y llega
+con la Fase 1, pero es la parte que varía de un aula a otra y la que decide si
+merece la pena cambiar de transporte. La decisión D-06 deja de depender de una
+intuición: habrá un número.
+
+### R-3 — Inspección TLS en la red del instituto — *detectado y nombrado*
+
+Antes solo se detectaba cuando la cadena fallaba. Ahora el diagnóstico lee el
+emisor del certificado: si no es una autoridad pública conocida, la cadena
+valida pero alguien está leyendo el tráfico, y eso se dice con nombre y
+apellidos.
+
+Se avisa sin bloquear —la clase puede seguir— y se recomienda consultarlo con
+el administrador antes de usar la aplicación con datos del alumnado.
+
+Comprobado en vivo: el contenedor de desarrollo está tras un proxy que
+inspecciona HTTPS, y la comprobación lo señaló por su nombre.
+
+### R-4 — Peso de la carpeta portable — *cerrado*
+
+Unos 204 MB. Descartado como problema por decisión expresa. La consecuencia es
+que las defensas del detector pueden permitirse su coste en disco: el modelo
+VAD son 1,7 MB que antes se habrían discutido.
+
+### R-5 — Reintroducir la clave al mover la carpeta — *resuelto, opcional*
+
+Hay un segundo almacén: scrypt deriva una clave de una contraseña que elige el
+profesor y AES-GCM cifra con ella. El cifrado no depende de nada de la máquina,
+así que la carpeta funciona en cualquier ordenador del centro.
+
+DPAPI sigue siendo el predeterminado, porque cambia un secreto que guarda
+Windows por uno que hay que recordar. Es una casilla en la pantalla de
+configuración, con el coste de cada opción escrito al lado.
+
+Los tokens llevan marcado el esquema que los escribió, de modo que un archivo
+copiado entre equipos pide la contraseña en lugar de devolver basura. AES-GCM
+autentica, así que un archivo manipulado no descifra.
+
+### R-6 — Sin cancelación de eco — *mitigado*
+
+Sin AEC, el micrófono oye los altavoces y el asistente puede oírse a sí mismo
+decir la frase e interrumpir su propia respuesta.
+
+Cerrar el micrófono mientras habla costaría la interrupción por voz que pide la
+spec §6.2. En su lugar hay una guarda que sube el listón durante la
+reproducción: una persona a un metro del micrófono suena más fuerte y más
+limpia que el retorno de los altavoces. Cada activación descartada se cuenta y
+se muestra, así que el margen se ajusta con datos.
+
+La cancelación de eco de verdad llega si se adopta WebRTC (R-2), que la trae
+del navegador. Hasta entonces, la guarda es la mitigación, y se puede
+desactivar cuando se usan auriculares y no hay camino acústico que guardar.
+
+### R-7 — Antivirus con un ejecutable sin firmar — *gestionado*
+
+Tres medidas:
+
+- El script de construcción **firma** los ejecutables si se le da un
+  certificado (`-CertificatePath`), con sellado de tiempo.
+- Sin certificado, cada construcción genera **`SHA256SUMS.txt`**, que es lo que
+  necesita un administrador para conceder una excepción con fundamento.
+- **`docs/antivirus.md`** explica por qué ocurre, qué pedir al administrador y
+  cómo verificar la carpeta.
+
+Sigue sin comprobarse en un equipo real del instituto, y esa prueba conviene
+hacerla con antelación, no el día de la clase.
+
+---
+
 ## Problemas y riesgos abiertos
 
-| # | Riesgo | Estado |
-|---|--------|--------|
-| R-1 | Falsos positivos de "Oye Chat" con ruido de aula y varias voces | Sin medir (D-04) |
-| R-2 | Latencia del turno oral con WebSocket en lugar de WebRTC | Sin medir (D-06) |
-| R-3 | Filtrado de WebSocket o inspección TLS en la red del instituto | Lo comprueba el diagnóstico (D-03) |
-| R-4 | Peso de la carpeta portable: ~204 MB ya en Fase 0, antes del modelo de embeddings | Medido, a vigilar (P-5, D-08) |
-| R-5 | Reintroducir la clave al mover la carpeta entre equipos | Aceptado (D-07) |
-| R-6 | Ausencia de cancelación de eco al reproducir y escuchar a la vez | Pendiente de Fase 1 (D-05) |
-| R-7 | Un antivirus del centro puede bloquear un ejecutable sin firmar | Sin comprobar en equipos reales |
+| # | Riesgo | Estado | Qué falta |
+|---|--------|--------|-----------|
+| R-1 | Falsos positivos de «Oye Chat» | Mitigado con VAD + confirmación | Medir una hora de clase real |
+| R-2 | Latencia del transporte WebSocket | Instrumentado y avisado | Leer el número en el instituto |
+| R-3 | Inspección TLS en la red del centro | Detectado y nombrado | — |
+| R-4 | Peso de la carpeta portable | Cerrado por decisión | — |
+| R-5 | La clave no viaja con la carpeta | Resuelto (contraseña opcional) | — |
+| R-6 | El asistente puede oírse a sí mismo | Mitigado con guarda de eco | AEC real llega con WebRTC |
+| R-7 | Antivirus y ejecutable sin firmar | Firma opcional + sumas + guía | Probar en un equipo del centro |
+
+Lo único que queda pendiente son dos medidas que solo pueden tomarse en el
+instituto, y una prueba de antivirus. Ninguna es trabajo de diseño.

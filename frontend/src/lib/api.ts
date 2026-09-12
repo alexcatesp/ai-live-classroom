@@ -140,10 +140,18 @@ export class BackendClient {
     return this.request("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
   }
 
-  saveApiKey(apiKey: string): Promise<void> {
+  /** A passphrase makes the stored key portable between computers (R-5). */
+  saveApiKey(apiKey: string, passphrase?: string): Promise<void> {
     return this.request("/api/settings/api-key", {
       method: "POST",
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify({ api_key: apiKey, passphrase: passphrase || null }),
+    });
+  }
+
+  unlock(passphrase: string): Promise<SettingsResponse> {
+    return this.request("/api/settings/unlock", {
+      method: "POST",
+      body: JSON.stringify({ passphrase }),
     });
   }
 

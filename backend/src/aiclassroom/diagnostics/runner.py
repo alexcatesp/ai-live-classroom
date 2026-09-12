@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from ..audio.devices import probe_devices
+from ..config.secrets import PassphraseRequired
 from ..config.settings import OPENAI_HOST, Settings
 from ..config.store import SettingsStore
 from ..realtime.client import RealtimeClient, WebSocketRealtimeClient
@@ -117,9 +118,26 @@ class DiagnosticsRunner:
             results.append(_skipped("realtime", "Conexión Realtime", reason))
             return DiagnosticsReport(results, started_at, datetime.now(UTC))
 
-        api_key = self._store.get_api_key()
-        key_result = await check_api_key(api_key, self._base_url)
-        results.append(key_result)
+        try:
+            api_key = self._store.get_api_key()
+        except PassphraseRequired as exc:
+            # The key exists but is sealed until the teacher types the
+            # passphrase (R-5). That is a different problem from having no key,
+            # and it has a different remedy.
+            api_key = None
+            results.append(
+                CheckResult(
+                    "api_key",
+                    "Clave de la API",
+                    CheckStatus.FAILED,
+                    str(exc),
+                    "Introduce la contraseña en la pantalla de configuración.",
+                )
+            )
+        else:
+            results.append(await check_api_key(api_key, self._base_url))
+
+        key_result = results[-1]
 
         if key_result.blocking or not api_key:
             results.append(

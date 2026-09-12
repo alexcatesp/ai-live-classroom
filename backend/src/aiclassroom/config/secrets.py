@@ -1,13 +1,21 @@
 """Storage for the API key.
 
-D-07: on Windows the key is encrypted with DPAPI in user scope, which needs no
-administrator rights and ties the ciphertext to the Windows account. Everywhere
-else -- development machines, CI -- DPAPI does not exist, so a clearly marked
-plaintext store stands in. Both sit behind `SecretStore` so nothing else in the
-codebase knows which one is in use.
+Three stores, one interface, so nothing else in the codebase knows which is in
+use:
 
-Tokens are tagged with the scheme that produced them (`dpapi:` / `plain:`) so a
-settings file copied between machines fails loudly instead of returning rubbish.
+* **DPAPI** (D-07, the Windows default). Encrypted in user scope, needing no
+  administrator rights. The ciphertext is bound to the Windows account, which
+  is why the key does not travel with the portable folder.
+* **Passphrase** (risk R-5). scrypt derives a key from a passphrase the teacher
+  chooses, and AES-GCM encrypts with it. This one *does* travel: the same
+  folder works on any classroom PC, at the cost of typing the passphrase when
+  the application opens. Offered as an option, never as the default, because it
+  trades a secret Windows holds for one a person has to remember.
+* **Plaintext**, for development off Windows, and clearly marked as such.
+
+Tokens are tagged with the scheme that produced them (`dpapi:`, `pass:`,
+`plain:`) so a settings file copied between machines fails loudly instead of
+returning rubbish.
 """
 
 from __future__ import annotations
@@ -22,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 class SecretError(RuntimeError):
     """Raised when a secret cannot be protected or recovered."""
+
+
+class PassphraseRequired(SecretError):
+    """Raised when the stored key needs a passphrase that has not been given."""
+
+
+class WrongPassphrase(SecretError):
+    """Raised when the passphrase does not open the stored key."""
 
 
 class SecretStore(Protocol):
@@ -142,8 +158,103 @@ class PlaintextSecretStore:
             raise SecretError("El token guardado está corrupto.") from exc
 
 
-def create_secret_store() -> SecretStore:
-    """Pick the right store for the platform we are running on."""
+# scrypt parameters. n=2**15 keeps unlocking to a fraction of a second on a
+# classroom PC while making a brute force over the ciphertext expensive.
+_SCRYPT_N = 2**15
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+# 128 * n * r is 32 MiB, which is exactly OpenSSL's default ceiling, so the
+# limit has to be raised explicitly or the derivation refuses to run.
+_SCRYPT_MAXMEM = 64 * 1024 * 1024
+_KEY_BYTES = 32
+_SALT_BYTES = 16
+_NONCE_BYTES = 12
+
+
+class PassphraseSecretStore:
+    """AES-GCM under a scrypt-derived key (risk R-5).
+
+    The ciphertext depends on nothing but the passphrase, so the settings file
+    can be copied between computers and USB sticks and still open. The salt and
+    nonce are stored alongside it -- neither is secret, and a fresh nonce per
+    write is what keeps AES-GCM safe across repeated saves.
+    """
+
+    scheme = "pass"
+
+    def __init__(self, passphrase: str) -> None:
+        if not passphrase:
+            raise PassphraseRequired("Hace falta una contraseña para abrir la clave.")
+        self._passphrase = passphrase.encode("utf-8")
+
+    def _derive(self, salt: bytes) -> bytes:
+        import hashlib
+
+        return hashlib.scrypt(
+            self._passphrase,
+            salt=salt,
+            n=_SCRYPT_N,
+            r=_SCRYPT_R,
+            p=_SCRYPT_P,
+            dklen=_KEY_BYTES,
+            maxmem=_SCRYPT_MAXMEM,
+        )
+
+    def protect(self, value: str) -> str:
+        import os
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        salt = os.urandom(_SALT_BYTES)
+        nonce = os.urandom(_NONCE_BYTES)
+        ciphertext = AESGCM(self._derive(salt)).encrypt(nonce, value.encode("utf-8"), None)
+        payload = base64.b64encode(salt + nonce + ciphertext).decode("ascii")
+        return f"{self.scheme}:{payload}"
+
+    def unprotect(self, token: str) -> str:
+        from cryptography.exceptions import InvalidTag
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        payload = _split_token(token, self.scheme)
+        try:
+            raw = base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise SecretError("El token cifrado está corrupto.") from exc
+
+        if len(raw) <= _SALT_BYTES + _NONCE_BYTES:
+            raise SecretError("El token cifrado está incompleto.")
+
+        salt = raw[:_SALT_BYTES]
+        nonce = raw[_SALT_BYTES : _SALT_BYTES + _NONCE_BYTES]
+        ciphertext = raw[_SALT_BYTES + _NONCE_BYTES :]
+        try:
+            plaintext = AESGCM(self._derive(salt)).decrypt(nonce, ciphertext, None)
+        except InvalidTag as exc:
+            # AES-GCM cannot tell a wrong passphrase from tampering, and for the
+            # teacher the answer is the same either way: type it again.
+            raise WrongPassphrase(
+                "La contraseña no es correcta, o el archivo de configuración se ha alterado."
+            ) from exc
+        return plaintext.decode("utf-8")
+
+
+def token_scheme(token: str | None) -> str | None:
+    """Which store wrote this token, without needing to open it."""
+    if not token:
+        return None
+    scheme, separator, _ = token.partition(":")
+    return scheme if separator else None
+
+
+def create_secret_store(passphrase: str | None = None) -> SecretStore:
+    """Pick the store to use.
+
+    A passphrase always wins: asking for one is an explicit choice to make the
+    key portable. Otherwise DPAPI on Windows, and the development stand-in
+    everywhere else.
+    """
+    if passphrase:
+        return PassphraseSecretStore(passphrase)
     if sys.platform == "win32":
         return DpapiSecretStore()
     return PlaintextSecretStore()

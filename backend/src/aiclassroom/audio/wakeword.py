@@ -1,17 +1,27 @@
 """Wake word detection for "Oye Chat" (D-04).
 
-openWakeWord was chosen for its licence rather than its accuracy, so the open
-risk R-1 is the false positive rate in a noisy classroom. Two things follow from
-that and shape this module:
+openWakeWord was chosen for its licence rather than its accuracy, so risk R-1 --
+the false positive rate in a noisy classroom -- is what this module is built
+against. Three defences stack, cheapest first:
 
-* the detector is reached only through `WakeWordDetector`, so swapping in a
-  local STT approach later does not touch the audio engine;
-* every score is kept in a small ring buffer and exposed, so the teacher can
-  watch the meter during a real class and tune the sensitivity against evidence
-  instead of guesswork (spec section 22).
+1. **Voice activity gating.** Silero's VAD runs alongside the detector and
+   zeroes any score that does not coincide with speech. Chairs scraping, doors,
+   a projector fan: none of them can activate the assistant, whatever the
+   detector thinks it heard.
+2. **Confirmation frames.** A single frame above the threshold is a spike, not
+   a wake phrase. The phrase spans several frames, so N consecutive frames must
+   agree before the assistant wakes.
+3. **The refractory window**, which stops one activation counting twice.
+
+Everything above is measurable offline with `scripts/measure_wakeword.py`, and
+visible live in the detector meter, so the settings can be tuned against
+recordings from the actual classroom rather than guessed (spec section 22).
+
+The detector is reached only through `WakeWordDetector`, so swapping in a local
+STT approach later does not touch the audio engine.
 
 Timing is counted in frames, not wall-clock seconds. A frame is a fixed 80 ms,
-which makes the refractory window exactly reproducible in tests.
+which makes the refractory and confirmation windows exactly reproducible.
 """
 
 from __future__ import annotations
@@ -38,6 +48,15 @@ FRAME_SECONDS = FRAME_SAMPLES / CAPTURE_SAMPLE_RATE  # 0.08 s
 _MIN_THRESHOLD = 0.35
 _MAX_THRESHOLD = 0.95
 
+# Consecutive frames that must clear the threshold before the assistant wakes.
+# Two frames is 160 ms, comfortably shorter than "Oye Chat" and long enough to
+# reject the single-frame spikes that noise produces.
+DEFAULT_CONFIRMATION_FRAMES = 2
+
+# Silero VAD score below which a detection is discarded. Speech in a classroom
+# scores well above this; a chair or a door does not score at all.
+DEFAULT_VAD_THRESHOLD = 0.5
+
 
 def threshold_for(sensitivity: float) -> float:
     """Higher sensitivity means a lower score is enough to fire."""
@@ -53,16 +72,18 @@ def threshold_for(sensitivity: float) -> float:
 BASE_MODELS_SUBFOLDER = "openwakeword"
 MELSPEC_MODEL = "melspectrogram.onnx"
 EMBEDDING_MODEL = "embedding_model.onnx"
+VAD_MODEL = "silero_vad.onnx"
+BASE_MODELS = (MELSPEC_MODEL, EMBEDDING_MODEL, VAD_MODEL)
 
 
 class WakeWordUnavailable(RuntimeError):
     """Raised when no usable detector can be built."""
 
 
-def base_model_paths(models_dir: Path) -> tuple[Path, Path]:
-    """Where the shipped feature extractor lives."""
+def base_model_paths(models_dir: Path) -> tuple[Path, ...]:
+    """Where the shipped feature extractor and the VAD live."""
     base = models_dir / BASE_MODELS_SUBFOLDER
-    return base / MELSPEC_MODEL, base / EMBEDDING_MODEL
+    return tuple(base / name for name in BASE_MODELS)
 
 
 def missing_base_models(models_dir: Path) -> list[Path]:
@@ -93,13 +114,22 @@ class WakeWordDetector(Protocol):
 
 
 class _ScoreTracker:
-    """Shared bookkeeping: threshold, refractory window and score history."""
+    """Shared bookkeeping: threshold, confirmation, refractory and history."""
 
-    def __init__(self, phrase: str, sensitivity: float, refractory_seconds: float) -> None:
+    def __init__(
+        self,
+        phrase: str,
+        sensitivity: float,
+        refractory_seconds: float,
+        confirmation_frames: int = DEFAULT_CONFIRMATION_FRAMES,
+    ) -> None:
         self._phrase = phrase
         self._threshold = threshold_for(sensitivity)
         self._refractory_frames = math.ceil(max(refractory_seconds, 0.0) / FRAME_SECONDS)
+        self._confirmation_frames = max(1, confirmation_frames)
         self._cooldown = 0
+        self._consecutive = 0
+        self._peak = 0.0
         self._scores: deque[float] = deque(maxlen=120)  # about 10 seconds
         self._lock = threading.Lock()
 
@@ -111,22 +141,46 @@ class _ScoreTracker:
     def threshold(self) -> float:
         return self._threshold
 
+    @property
+    def confirmation_frames(self) -> int:
+        return self._confirmation_frames
+
     def observe(self, score: float) -> Detection | None:
         with self._lock:
             self._scores.append(score)
+
             if self._cooldown > 0:
                 # Still inside the refractory window: the tail of an activation
                 # that already fired must not fire a second time.
                 self._cooldown -= 1
+                self._consecutive = 0
                 return None
+
             if score < self._threshold:
+                # The run is broken, so a later spike starts counting afresh.
+                self._consecutive = 0
+                self._peak = 0.0
                 return None
+
+            self._consecutive += 1
+            self._peak = max(self._peak, score)
+            if self._consecutive < self._confirmation_frames:
+                # One frame above the threshold is a spike; the wake phrase
+                # lasts longer than 80 ms (defence 2 against R-1).
+                return None
+
+            peak = self._peak
             self._cooldown = self._refractory_frames
-        return Detection(phrase=self._phrase, score=score, at=datetime.now(UTC))
+            self._consecutive = 0
+            self._peak = 0.0
+
+        return Detection(phrase=self._phrase, score=peak, at=datetime.now(UTC))
 
     def reset(self) -> None:
         with self._lock:
             self._cooldown = 0
+            self._consecutive = 0
+            self._peak = 0.0
             self._scores.clear()
 
     def recent_scores(self) -> list[float]:
@@ -145,6 +199,9 @@ class OpenWakeWordDetector:
         refractory_seconds: float = 2.0,
         melspec_model: Path | None = None,
         embedding_model: Path | None = None,
+        vad_model: Path | None = None,
+        vad_threshold: float = DEFAULT_VAD_THRESHOLD,
+        confirmation_frames: int = DEFAULT_CONFIRMATION_FRAMES,
     ) -> None:
         try:
             from openwakeword.model import Model
@@ -169,15 +226,49 @@ class OpenWakeWordDetector:
             }
 
         try:
+            # Built without VAD here on purpose: openWakeWord would look for
+            # silero_vad.onnx at a path fixed inside its own package, which the
+            # portable folder does not have. The VAD is attached below from the
+            # copy that ships in data/models instead.
             self._model = Model(
                 wakeword_models=[str(model_path)], inference_framework="onnx", **extra
             )
         except Exception as exc:  # noqa: BLE001 - the library raises broadly
             raise WakeWordUnavailable(f"No se pudo cargar el modelo de activación: {exc}") from exc
 
+        self._attach_vad(vad_model, vad_threshold)
+
         # The key of the prediction dict is the model file stem.
         self._model_key = model_path.stem
-        self._tracker = _ScoreTracker(phrase, sensitivity, refractory_seconds)
+        self._tracker = _ScoreTracker(
+            phrase, sensitivity, refractory_seconds, confirmation_frames
+        )
+
+    def _attach_vad(self, vad_model: Path | None, vad_threshold: float) -> None:
+        """Gate detections on speech being present (defence 1 against R-1).
+
+        openWakeWord checks `vad_threshold` on every prediction and calls
+        `self.vad`, so supplying both is enough to turn the gate on with a model
+        loaded from wherever we put it.
+        """
+        self.vad_enabled = False
+        if vad_model is None or vad_threshold <= 0:
+            return
+        if not vad_model.exists():
+            logger.warning(
+                "No se encontró el modelo de VAD en %s: el detector funcionará sin "
+                "filtro de voz y habrá más falsos positivos.",
+                vad_model,
+            )
+            return
+        try:
+            from openwakeword.vad import VAD
+
+            self._model.vad = VAD(model_path=str(vad_model))
+            self._model.vad_threshold = vad_threshold
+            self.vad_enabled = True
+        except Exception:  # noqa: BLE001 - never let the gate break the detector
+            logger.exception("No se pudo activar el filtro de voz (VAD).")
 
     @property
     def phrase(self) -> str:
@@ -186,6 +277,10 @@ class OpenWakeWordDetector:
     @property
     def threshold(self) -> float:
         return self._tracker.threshold
+
+    @property
+    def confirmation_frames(self) -> int:
+        return self._tracker.confirmation_frames
 
     def process(self, frame: np.ndarray) -> Detection | None:
         if frame.size != FRAME_SAMPLES:
@@ -224,11 +319,17 @@ class ScriptedWakeWordDetector:
         phrase: str = "Oye Chat",
         sensitivity: float = 0.5,
         refractory_seconds: float = 2.0,
+        confirmation_frames: int = 1,
     ) -> None:
         self._scripted = list(scores or [])
         self._index = 0
-        self._tracker = _ScoreTracker(phrase, sensitivity, refractory_seconds)
+        # Defaults to 1 so a test that only cares about thresholds does not have
+        # to pad every script; the confirmation logic has its own tests.
+        self._tracker = _ScoreTracker(
+            phrase, sensitivity, refractory_seconds, confirmation_frames
+        )
         self.frames_seen = 0
+        self.vad_enabled = False
 
     @property
     def phrase(self) -> str:
@@ -237,6 +338,10 @@ class ScriptedWakeWordDetector:
     @property
     def threshold(self) -> float:
         return self._tracker.threshold
+
+    @property
+    def confirmation_frames(self) -> int:
+        return self._tracker.confirmation_frames
 
     def process(self, frame: np.ndarray) -> Detection | None:
         self.frames_seen += 1
@@ -264,6 +369,8 @@ def create_detector(
     phrase: str,
     sensitivity: float = 0.5,
     refractory_seconds: float = 2.0,
+    vad_threshold: float = DEFAULT_VAD_THRESHOLD,
+    confirmation_frames: int = DEFAULT_CONFIRMATION_FRAMES,
 ) -> WakeWordDetector:
     """Build the real detector for `phrase`, or explain why it is unavailable."""
     missing = missing_base_models(models_dir)
@@ -275,7 +382,7 @@ def create_detector(
             "Descárgalos con scripts/fetch_wakeword_runtime.py desde un equipo con conexión."
         )
 
-    melspec, embedding = base_model_paths(models_dir)
+    melspec, embedding, vad = base_model_paths(models_dir)
     return OpenWakeWordDetector(
         model_path=models_dir / model_filename(phrase),
         phrase=phrase,
@@ -283,4 +390,7 @@ def create_detector(
         refractory_seconds=refractory_seconds,
         melspec_model=melspec,
         embedding_model=embedding,
+        vad_model=vad,
+        vad_threshold=vad_threshold,
+        confirmation_frames=confirmation_frames,
     )

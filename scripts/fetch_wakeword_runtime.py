@@ -18,8 +18,10 @@ import argparse
 import sys
 from pathlib import Path
 
-# The two models openWakeWord needs regardless of which wake phrase is used.
-BASE_MODELS = ("melspectrogram.onnx", "embedding_model.onnx")
+# What openWakeWord needs regardless of which wake phrase is used: the feature
+# extractor, plus Silero's voice activity model, which is what keeps a scraping
+# chair from waking the assistant (risk R-1).
+BASE_MODELS = ("melspectrogram.onnx", "embedding_model.onnx", "silero_vad.onnx")
 SUBFOLDER = "openwakeword"
 
 
@@ -60,8 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     # The download also brings openWakeWord's pretrained English wake words
     # ("alexa", "hey jarvis", "timer"...) and the tflite duplicates of the base
     # models. None of them is ever loaded here -- the phrase is Spanish and the
-    # detector runs on ONNX -- and together they are some 17 MB of a folder the
-    # teacher copies onto a USB stick, so they are removed (risk R-4).
+    # detector runs on ONNX -- so they are removed. Not for weight, which is no
+    # longer a constraint, but because a model that is never loaded is a model
+    # nobody will notice has gone stale.
     removed = 0
     for extra in sorted(target.iterdir()):
         if extra.is_file() and extra.name not in BASE_MODELS:

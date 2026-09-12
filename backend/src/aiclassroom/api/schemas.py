@@ -92,10 +92,20 @@ class DevicesOut(BaseModel):
 class SettingsOut(BaseModel):
     settings: Settings
     api_key_configured: bool
+    # Risk R-5: a key stored under a passphrase travels with the folder, but
+    # has to be unlocked before each session.
+    requires_passphrase: bool = False
+    unlocked: bool = True
 
 
 class ApiKeyIn(BaseModel):
     api_key: str = Field(min_length=1)
+    # When given, the key is encrypted so it works on any computer.
+    passphrase: str | None = Field(default=None, min_length=1)
+
+
+class UnlockIn(BaseModel):
+    passphrase: str = Field(min_length=1)
 
 
 class CheckOut(BaseModel):
@@ -142,11 +152,14 @@ class ListeningOut(BaseModel):
     listening: bool
     activations: int
     interruptions: int
+    echo_suppressions: int
     frames_processed: int
     seconds_listening: float
     threshold: float | None
     recent_scores: list[float]
     phrase: str | None
+    vad_enabled: bool
+    confirmation_frames: int | None
 
     @classmethod
     def of(cls, status: ListeningStatus) -> ListeningOut:

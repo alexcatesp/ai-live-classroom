@@ -34,6 +34,17 @@ export function WakeWordMeter({ status }: Props) {
         Detectando «{status.phrase}» con umbral {threshold.toFixed(2)}.
       </p>
 
+      <ul className="guards">
+        <li className={status.vad_enabled ? "guard-on" : "guard-off"}>
+          {status.vad_enabled ? "Filtro de voz activo" : "Sin filtro de voz"}
+        </li>
+        {status.confirmation_frames !== null && status.confirmation_frames > 1 && (
+          <li className="guard-on">
+            Confirmación: {status.confirmation_frames} frames
+          </li>
+        )}
+      </ul>
+
       <div
         className="meter"
         role="meter"
@@ -58,6 +69,10 @@ export function WakeWordMeter({ status }: Props) {
         <div>
           <dt>Pico reciente</dt>
           <dd>{peak.toFixed(2)}</dd>
+        </div>
+        <div>
+          <dt>Ecos descartados</dt>
+          <dd>{status.echo_suppressions}</dd>
         </div>
         <div>
           <dt>Escuchando</dt>

@@ -36,6 +36,13 @@ class Settings(BaseModel):
     wake_phrase: str = DEFAULT_WAKE_PHRASE
     wake_sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
     wake_refractory_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
+    # Defences against false positives in a noisy classroom (risk R-1).
+    # 0 disables the voice gate; 1 disables the confirmation requirement.
+    wake_vad_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    wake_confirmation_frames: int = Field(default=2, ge=1, le=10)
+    # Extra margin the detector must clear while the assistant is speaking, so
+    # it cannot hear itself through the speakers (risk R-6). 0 disables it.
+    echo_guard_margin: float = Field(default=0.15, ge=0.0, le=0.6)
 
     max_response_seconds: int = Field(default=45, ge=5, le=300)
     materials_dir: str | None = None

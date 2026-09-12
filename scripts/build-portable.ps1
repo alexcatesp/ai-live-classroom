@@ -20,7 +20,15 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = "release",
-    [switch]$SkipTests
+    [switch]$SkipTests,
+
+    # Risk R-7: an unsigned executable is what antivirus and SmartScreen react
+    # to. Signing is optional because a code signing certificate costs money
+    # and a school may not have one; without it the build still produces
+    # SHA256SUMS.txt so the folder can at least be verified.
+    [string]$CertificatePath,
+    [string]$CertificatePassword,
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,6 +114,45 @@ try {
 finally { Pop-Location }
 
 Copy-Item (Join-Path $root "docs\README-portable.txt") (Join-Path $staging "README.txt") -Force
+
+# -- signing and checksums (risk R-7) --------------------------------------
+
+$executables = Get-ChildItem $staging -Recurse -Include *.exe
+
+if ($CertificatePath) {
+    Write-Host "Firmando los ejecutables..." -ForegroundColor Cyan
+    $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                              -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -match "x64" } |
+                Select-Object -First 1
+
+    if (-not $signtool) { throw "No se encontró signtool.exe (Windows SDK)." }
+
+    foreach ($executable in $executables) {
+        & $signtool.FullName sign /fd SHA256 /f $CertificatePath `
+            /p $CertificatePassword /tr $TimestampUrl /td SHA256 $executable.FullName
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo firmar $($executable.Name)." }
+    }
+    Write-Host "Firmados $($executables.Count) ejecutables." -ForegroundColor Green
+}
+else {
+    Write-Host ""
+    Write-Host "AVISO: los ejecutables no van firmados." -ForegroundColor Yellow
+    Write-Host "Windows SmartScreen mostrara un aviso la primera vez, y algunos" -ForegroundColor Yellow
+    Write-Host "antivirus pueden bloquear la carpeta. Ver docs/antivirus.md." -ForegroundColor Yellow
+}
+
+# A checksum file lets whoever receives the folder confirm it arrived intact,
+# which is the next best thing to a signature.
+$checksums = Join-Path $staging "SHA256SUMS.txt"
+Get-ChildItem $staging -Recurse -File |
+    Where-Object { $_.FullName -ne $checksums } |
+    ForEach-Object {
+        $relative = $_.FullName.Substring($staging.Length + 1)
+        "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $relative
+    } | Set-Content $checksums -Encoding ASCII
+
+Write-Host "Sumas de verificacion en $checksums" -ForegroundColor Green
 
 $zip = Join-Path $release "AI-Classroom-Live-portable.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }

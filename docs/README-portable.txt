@@ -36,9 +36,22 @@ PRIMERA VEZ
 LA CLAVE DE LA API
 ------------------
 
-La clave se guarda cifrada con tu cuenta de Windows, en data\config\.
-No se puede leer desde otro equipo ni desde otra cuenta: si copias esta
-carpeta a otro ordenador, tendras que volver a introducirla. Es intencionado.
+Hay dos formas de guardarla, y la eliges en Configuracion:
+
+  Ligada a este equipo (predeterminada)
+      Se cifra con tu cuenta de Windows. Es lo mas comodo: no hay que
+      escribir nada al empezar la clase. Si copias la carpeta a otro
+      ordenador, tendras que volver a introducir la clave.
+
+  Con contrasena
+      Marca "Poder usar esta clave en otros ordenadores" y elige una
+      contrasena. La clave viaja con la carpeta y funciona en cualquier
+      equipo del centro, pero tendras que escribir la contrasena al
+      empezar cada sesion. Si la olvidas, habra que introducir la clave
+      de nuevo: no hay forma de recuperarla.
+
+En los dos casos la clave se guarda cifrada en data\config\ y nunca se
+muestra en pantalla.
 
 
 TUS DATOS
@@ -74,6 +87,15 @@ SI ALGO FALLA
   No detecta "Oye Chat"
       Sube la sensibilidad en Configuracion y observa el medidor mientras
       hablas. Si se activa sola, bajala.
+
+  Se activa solo, sin que nadie diga la frase
+      Comprueba que "Activar solo cuando haya voz" esta marcado: descarta
+      todo lo que no sea una persona hablando. Si aun asi ocurre, baja la
+      sensibilidad.
+
+  Windows avisa de que el programa no es de confianza
+      Es normal: el ejecutable no va firmado. Ver docs\antivirus.md, que
+      explica que pedir al administrador del centro.
 
   Falta el modelo de activacion
       En data\models\ deben estar:

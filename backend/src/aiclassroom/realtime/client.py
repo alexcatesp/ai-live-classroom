@@ -15,7 +15,8 @@ import asyncio
 import json
 import logging
 import ssl
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Protocol
 
@@ -34,6 +35,14 @@ class HandshakeStatus(StrEnum):
     TIMEOUT = "timeout"
 
 
+# Risk R-2: whether a WebSocket from the backend is fast enough, or whether
+# WebRTC from the frontend is needed. The handshake is not the whole answer --
+# a spoken turn adds the model's own latency -- but it is the part the school
+# network contributes, and it is the part that varies between classrooms.
+# Above this, the network is the problem worth investigating first.
+HANDSHAKE_WARNING_SECONDS = 1.5
+
+
 @dataclass(frozen=True)
 class HandshakeResult:
     status: HandshakeStatus
@@ -41,10 +50,20 @@ class HandshakeResult:
     session_id: str | None = None
     model: str | None = None
     remedy: str | None = None
+    #: Seconds from opening the connection to the session being confirmed.
+    elapsed_seconds: float | None = None
 
     @property
     def ok(self) -> bool:
         return self.status is HandshakeStatus.OK
+
+    @property
+    def slow(self) -> bool:
+        return (
+            self.ok
+            and self.elapsed_seconds is not None
+            and self.elapsed_seconds > HANDSHAKE_WARNING_SECONDS
+        )
 
 
 class RealtimeClient(Protocol):
@@ -68,19 +87,23 @@ class WebSocketRealtimeClient:
         self._ssl_context = ssl_context
 
     async def check_connection(self, model: str) -> HandshakeResult:
+        started = time.monotonic()
         try:
-            return await asyncio.wait_for(self._handshake(model), timeout=self._timeout)
+            result = await asyncio.wait_for(self._handshake(model), timeout=self._timeout)
         except TimeoutError:
             return HandshakeResult(
                 status=HandshakeStatus.TIMEOUT,
-                detail=(
-                    f"La API no respondió en {self._timeout:.0f} segundos."
-                ),
+                detail=f"La API no respondió en {self._timeout:.0f} segundos.",
                 remedy=(
                     "Puede que la red del centro esté filtrando las conexiones WebSocket. "
                     "Consúltalo con el administrador del aula."
                 ),
+                elapsed_seconds=time.monotonic() - started,
             )
+
+        # Measured here rather than inside the handshake so it covers everything
+        # the classroom network contributes: DNS, TCP, TLS and the upgrade.
+        return replace(result, elapsed_seconds=time.monotonic() - started)
 
     async def _handshake(self, model: str) -> HandshakeResult:
         import websockets

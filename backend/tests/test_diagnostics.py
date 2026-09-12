@@ -314,3 +314,94 @@ def test_a_failed_check_can_never_be_left_without_a_remedy():
 
 def test_a_passing_check_carries_no_remedy():
     assert checks.CheckResult("nuevo", "Nuevo", CheckStatus.OK, "bien").remedy is None
+
+
+# -- TLS interception made visible (risk R-3) ----------------------------
+
+
+def certificate(issuer: str, days_valid: int = 90) -> dict:
+    expiry = (datetime.now(UTC) + timedelta(days=days_valid)).strftime("%b %d %H:%M:%S %Y GMT")
+    return {
+        "issuer": ((("countryName", "ES"),), (("organizationName", issuer),)),
+        "notAfter": expiry,
+    }
+
+
+def test_the_issuer_is_read_from_the_certificate():
+    assert checks._certificate_issuer(certificate("DigiCert Inc")) == "DigiCert Inc"
+    assert checks._certificate_issuer({}) is None
+    assert checks._certificate_issuer({"issuer": ()}) is None
+
+
+async def patched_tls(monkeypatch, cert: dict):
+    class FakeSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def getpeercert(self):
+            return cert
+
+    class FakeContext:
+        def wrap_socket(self, *_args, **_kwargs):
+            return FakeSocket()
+
+    monkeypatch.setattr(checks.ssl, "create_default_context", FakeContext)
+    monkeypatch.setattr(checks.socket, "create_connection", lambda *_a, **_k: FakeSocket())
+    return await check_tls("api.openai.com")
+
+
+async def test_a_school_proxy_certificate_is_named_not_just_accepted(monkeypatch):
+    """The chain validates, so nothing looks wrong -- but someone is reading it."""
+    result = await patched_tls(monkeypatch, certificate("IES Ejemplo Web Filter"))
+
+    assert result.status is CheckStatus.WARNING
+    assert "IES Ejemplo Web Filter" in result.detail
+    assert "inspeccionando" in result.detail
+    # A warning, not a failure: the class can still go ahead.
+    assert result.blocking is False
+    assert "alumnado" in result.remedy
+
+
+async def test_a_public_authority_passes_and_is_named(monkeypatch):
+    result = await patched_tls(monkeypatch, certificate("DigiCert Inc"))
+
+    assert result.status is CheckStatus.OK
+    assert "DigiCert Inc" in result.detail
+
+
+async def test_expiry_still_wins_over_a_recognised_issuer(monkeypatch):
+    result = await patched_tls(monkeypatch, certificate("DigiCert Inc", days_valid=3))
+    assert result.status is CheckStatus.WARNING
+    assert "caduca" in result.detail
+
+
+# -- latency surfaced in the report (risk R-2) ---------------------------
+
+
+async def test_the_handshake_time_reaches_the_teacher():
+    stub = StubRealtimeClient(
+        HandshakeResult(HandshakeStatus.OK, "Sesión establecida.", elapsed_seconds=0.42)
+    )
+    result = await check_realtime(stub, "gpt-realtime")
+
+    assert result.status is CheckStatus.OK
+    assert "0.42 s" in result.detail
+
+
+async def test_a_slow_network_warns_without_blocking_the_class():
+    from aiclassroom.realtime.client import HANDSHAKE_WARNING_SECONDS
+
+    stub = StubRealtimeClient(
+        HandshakeResult(
+            HandshakeStatus.OK, "Sesión establecida.",
+            elapsed_seconds=HANDSHAKE_WARNING_SECONDS + 1.0,
+        )
+    )
+    result = await check_realtime(stub, "gpt-realtime")
+
+    assert result.status is CheckStatus.WARNING
+    assert result.blocking is False
+    assert "transporte" in result.remedy

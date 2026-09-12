@@ -115,9 +115,10 @@ needs_real_models = pytest.mark.skipif(
 
 
 def test_base_models_are_looked_for_in_the_shipped_subfolder(tmp_path):
-    melspec, embedding = base_model_paths(tmp_path)
+    melspec, embedding, vad = base_model_paths(tmp_path)
     assert melspec == tmp_path / "openwakeword" / "melspectrogram.onnx"
     assert embedding == tmp_path / "openwakeword" / "embedding_model.onnx"
+    assert vad == tmp_path / "openwakeword" / "silero_vad.onnx"
 
 
 def test_a_missing_feature_extractor_is_explained_not_downloaded(tmp_path):
@@ -139,13 +140,15 @@ def test_the_real_engine_scores_frames_without_touching_the_network():
     phrase_models = sorted(REAL_MODELS.glob("*.onnx"))
     assert phrase_models, "no hay ningún modelo de frase para la prueba"
 
-    melspec, embedding = base_model_paths(REAL_MODELS)
+    melspec, embedding, vad = base_model_paths(REAL_MODELS)
     detector = OpenWakeWordDetector(
         model_path=phrase_models[0],
         phrase="Prueba",
         melspec_model=melspec,
         embedding_model=embedding,
+        vad_model=vad,
     )
+    assert detector.vad_enabled, "el filtro de voz no se activó"
 
     # Enough frames to fill the model's internal buffers.
     for _ in range(25):
@@ -156,3 +159,95 @@ def test_the_real_engine_scores_frames_without_touching_the_network():
     assert all(0.0 <= score <= 1.0 for score in scores)
     # Silence must never activate the assistant.
     assert max(scores) < detector.threshold
+
+
+# -- defences against false positives (risk R-1) -------------------------
+
+
+def test_a_single_frame_spike_does_not_wake_the_assistant():
+    """Noise produces one-frame spikes; the wake phrase lasts longer."""
+    detector = ScriptedWakeWordDetector(scores=[0.9, 0.0, 0.9, 0.0], confirmation_frames=2)
+    assert all(result is None for result in run(detector, 4))
+
+
+def test_consecutive_frames_above_the_threshold_do_wake_it():
+    detector = ScriptedWakeWordDetector(scores=[0.9, 0.92], confirmation_frames=2)
+    results = run(detector, 2)
+    assert results[0] is None
+    assert results[1] is not None
+
+
+def test_the_reported_score_is_the_peak_of_the_confirmed_run():
+    """The meter should show how strong the activation was, not its last frame."""
+    detector = ScriptedWakeWordDetector(scores=[0.95, 0.70], confirmation_frames=2)
+    detection = run(detector, 2)[1]
+    assert detection is not None
+    assert detection.score == pytest.approx(0.95)
+
+
+def test_a_broken_run_starts_counting_again():
+    detector = ScriptedWakeWordDetector(
+        scores=[0.9, 0.1, 0.9, 0.1, 0.9], confirmation_frames=3
+    )
+    assert all(result is None for result in run(detector, 5))
+
+
+def test_requiring_more_frames_rejects_a_shorter_burst():
+    burst = [0.9, 0.9, 0.9]
+    three = ScriptedWakeWordDetector(burst, confirmation_frames=3)
+    four = ScriptedWakeWordDetector(burst, confirmation_frames=4)
+
+    assert any(result is not None for result in run(three, 3))
+    assert all(result is None for result in run(four, 3))
+
+
+def test_confirmation_cannot_be_switched_off_below_one_frame():
+    detector = ScriptedWakeWordDetector(scores=[0.9], confirmation_frames=0)
+    assert detector.confirmation_frames == 1
+    assert detector.process(FRAME) is not None
+
+
+def test_the_refractory_window_clears_a_run_in_progress():
+    """A run interrupted by an activation must not carry over into the next."""
+    detector = ScriptedWakeWordDetector(
+        scores=[0.9, 0.9, 0.9], confirmation_frames=2, refractory_seconds=0.16
+    )
+    results = run(detector, 3)
+    assert results[1] is not None
+    assert results[2] is None
+
+
+def test_the_voice_gate_is_reported_so_the_interface_can_show_it():
+    assert ScriptedWakeWordDetector().vad_enabled is False
+
+
+def test_a_missing_vad_model_degrades_instead_of_failing(tmp_path, caplog):
+    """Better a noisier detector than a class that cannot start."""
+    from aiclassroom.audio.wakeword import OpenWakeWordDetector
+
+    detector = OpenWakeWordDetector.__new__(OpenWakeWordDetector)
+    detector._model = type("FakeModel", (), {})()
+    detector._attach_vad(tmp_path / "no-existe.onnx", 0.5)
+
+    assert detector.vad_enabled is False
+
+
+@needs_real_models
+def test_the_voice_gate_loads_with_the_real_engine():
+    phrase_models = sorted(REAL_MODELS.glob("*.onnx"))
+    melspec, embedding, vad = base_model_paths(REAL_MODELS)
+
+    detector = OpenWakeWordDetector(
+        model_path=phrase_models[0],
+        phrase="Prueba",
+        melspec_model=melspec,
+        embedding_model=embedding,
+        vad_model=vad,
+        vad_threshold=0.5,
+    )
+
+    assert detector.vad_enabled is True
+    for _ in range(15):
+        detector.process(FRAME)
+    # Silence carries no speech, so the gate holds every score at zero.
+    assert max(detector.recent_scores()) == 0.0

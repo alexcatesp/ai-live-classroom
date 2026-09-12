@@ -57,13 +57,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 153 tests, 1 omitido
+.venv/bin/python -m pytest -q          # 213 tests, 2 omitidos
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 56 tests
+npm run test                            # 73 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio
@@ -143,12 +143,50 @@ docs/        especificación y registro de decisiones técnicas
 Durante la escucha pasiva no sale audio del equipo: la palabra de activación se
 detecta en local y los fragmentos se descartan según se procesan. No se guarda
 audio, y las transcripciones solo se conservan si el profesor lo activa
-(spec §14). La clave de la API se guarda cifrada con la cuenta de Windows del
-equipo, sin necesidad de permisos de administrador (D-07).
+(spec §14).
 
-## Riesgos abiertos
+La clave de la API se guarda cifrada y nunca llega a la interfaz. Por defecto se
+cifra con la cuenta de Windows del equipo, sin permisos de administrador (D-07).
+Si marcas «poder usar esta clave en otros ordenadores», se cifra con una
+contraseña que eliges tú (scrypt + AES-GCM) y entonces la carpeta funciona en
+cualquier equipo del centro, a cambio de escribir la contraseña al empezar cada
+sesión.
 
-Los recoge [`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md). El
-principal sigue siendo **R-1**: la tasa de falsos positivos de «Oye Chat» en un
-aula con ruido, que solo puede medirse en un aula real. El medidor del detector
-está en la aplicación precisamente para eso.
+## Cómo se defiende de los falsos positivos
+
+Que el asistente se despierte solo en mitad de una explicación es el fallo que
+arruinaría la clase, así que hay tres defensas encadenadas:
+
+1. **Filtro de voz.** El modelo VAD de Silero anula cualquier activación que no
+   coincida con una persona hablando. Sillas, puertas y ventiladores quedan
+   fuera por construcción.
+2. **Confirmación por frames.** Se exigen dos frames consecutivos por encima
+   del umbral: un pico de 80 ms no es una frase.
+3. **Guarda de eco.** Mientras el asistente habla, el listón sube, para que no
+   se confunda su propia voz saliendo por los altavoces con una interrupción.
+
+Medido sobre ruido con el motor real, a sensibilidad extrema: **60 falsos por
+hora sin filtro de voz, 0 con él**. Las tres son configurables y desactivables,
+precisamente para poder medir cuánto aporta cada una.
+
+### Medir en tu aula
+
+Graba una hora de clase sin decir la frase, y unos cuantos clips diciéndola:
+
+```bash
+python scripts/measure_wakeword.py --models data/models \
+    --negatives grabaciones/aula --positives grabaciones/frase
+```
+
+Devuelve, para cada sensibilidad, cuántas veces se habría despertado solo y
+cuántas veces habría respondido cuando tocaba. Objetivo razonable: 0 falsos por
+hora con detección por encima del 90%.
+
+## Riesgos
+
+El estado de cada uno está en
+[`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md). Los siete que
+había abiertos están mitigados o resueltos; lo que queda son dos medidas que
+solo pueden tomarse en el instituto (falsos positivos reales y latencia de la
+red del centro) y una prueba de antivirus, que conviene hacer con antelación y
+no el día de la clase: ver [`docs/antivirus.md`](docs/antivirus.md).

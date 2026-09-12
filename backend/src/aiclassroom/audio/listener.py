@@ -5,6 +5,16 @@ machine while the assistant is waiting. This class never touches the network:
 frames go from PortAudio into the detector and are dropped. Only an activation
 produces an event, and in Phase 0 that event just moves the state machine and
 increments a counter.
+
+It also carries the echo guard (risk R-6). The microphone hears the speakers,
+so without acoustic echo cancellation the assistant can hear itself say the
+wake phrase and interrupt its own answer. Rather than close the microphone
+while it speaks -- which would cost the barge-in the specification asks for in
+section 6.2 -- the guard raises the bar during playback: a person speaking over
+the assistant from a metre away is louder and clearer to the microphone than
+the speaker output bleeding back into it. Every suppressed detection is
+counted, so how often the assistant nearly heard itself is a number rather than
+a guess.
 """
 
 from __future__ import annotations
@@ -24,6 +34,13 @@ from .wakeword import Detection, WakeWordDetector
 logger = logging.getLogger(__name__)
 
 
+# Added to the detector threshold while the assistant is speaking. Chosen so a
+# marginal detection -- the kind the assistant's own voice produces after a
+# round trip through the room -- is discarded, while a deliberate interruption
+# still gets through. Tune it with scripts/measure_wakeword.py.
+DEFAULT_ECHO_GUARD_MARGIN = 0.15
+
+
 @dataclass
 class ListenerStats:
     """Spec section 15 asks for activation counts and timings per session."""
@@ -31,6 +48,7 @@ class ListenerStats:
     activations: int = 0
     frames_processed: int = 0
     interruptions: int = 0
+    echo_suppressions: int = 0
     started_at: datetime | None = None
     last_activation_at: datetime | None = None
     detections: list[Detection] = field(default_factory=list)
@@ -51,11 +69,13 @@ class WakeWordListener:
         detector: WakeWordDetector,
         machine: SessionStateMachine,
         on_detection: Callable[[Detection], None] | None = None,
+        echo_guard_margin: float = DEFAULT_ECHO_GUARD_MARGIN,
     ) -> None:
         self._engine = engine
         self._detector = detector
         self._machine = machine
         self._on_detection = on_detection
+        self._echo_guard_margin = max(0.0, echo_guard_margin)
         self._lock = threading.RLock()
         self.stats = ListenerStats()
 
@@ -83,7 +103,25 @@ class WakeWordListener:
         detection = self._detector.process(frame)
         if detection is None:
             return
+        if self._suppressed_as_echo(detection):
+            return
         self._handle_detection(detection)
+
+    def _suppressed_as_echo(self, detection: Detection) -> bool:
+        """Whether this detection is probably the assistant hearing itself."""
+        if self._echo_guard_margin <= 0 or not self._engine.is_playing:
+            return False
+
+        threshold = getattr(self._detector, "threshold", 0.0)
+        if detection.score >= threshold + self._echo_guard_margin:
+            # Loud and clear enough to be somebody in the room, not the echo.
+            return False
+
+        self.stats.echo_suppressions += 1
+        logger.debug(
+            "Activación descartada como eco del propio asistente (%.2f).", detection.score
+        )
+        return True
 
     def _handle_detection(self, detection: Detection) -> None:
         state = self._machine.state

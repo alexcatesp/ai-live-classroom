@@ -86,7 +86,7 @@ describe("BackendClient", () => {
       "http://127.0.0.1:54321/api/settings/api-key",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ api_key: "sk-muy-secreta" }),
+        body: JSON.stringify({ api_key: "sk-muy-secreta", passphrase: null }),
       }),
     );
   });

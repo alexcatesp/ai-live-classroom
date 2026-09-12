@@ -10,8 +10,9 @@ interface Props {
   saving: boolean;
   error: string | null;
   onSave: (settings: Settings) => void;
-  onSaveApiKey: (apiKey: string) => void;
+  onSaveApiKey: (apiKey: string, passphrase?: string) => void;
   onClearApiKey: () => void;
+  onUnlock: (passphrase: string) => void;
 }
 
 export function SettingsPanel({
@@ -22,8 +23,12 @@ export function SettingsPanel({
   onSave,
   onSaveApiKey,
   onClearApiKey,
+  onUnlock,
 }: Props) {
   const [apiKey, setApiKey] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [portable, setPortable] = useState(false);
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
 
   if (!data) {
     return (
@@ -47,12 +52,49 @@ export function SettingsPanel({
         </p>
       )}
 
+      {data.requires_passphrase && !data.unlocked && (
+        <div className="field unlock" role="alert">
+          <label htmlFor="unlock-passphrase">Desbloquea la clave</label>
+          <p className="muted">
+            La clave guardada está protegida con contraseña. Introdúcela para poder dar clase.
+          </p>
+          <div className="row">
+            <input
+              id="unlock-passphrase"
+              type="password"
+              value={unlockPassphrase}
+              autoComplete="off"
+              onChange={(event) => setUnlockPassphrase(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && unlockPassphrase.trim()) {
+                  onUnlock(unlockPassphrase);
+                  setUnlockPassphrase("");
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="primary"
+              disabled={unlockPassphrase.trim().length === 0 || saving}
+              onClick={() => {
+                onUnlock(unlockPassphrase);
+                setUnlockPassphrase("");
+              }}
+            >
+              Desbloquear
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="field">
         <label htmlFor="api-key">Clave de la API</label>
         <p className="muted">
-          {data.api_key_configured
-            ? "Hay una clave guardada y cifrada en este equipo."
-            : "No hay ninguna clave guardada en este equipo."}
+          {!data.api_key_configured
+            ? "No hay ninguna clave guardada en este equipo."
+            : data.requires_passphrase
+              ? "Hay una clave guardada, protegida con contraseña y válida en cualquier equipo."
+              : "Hay una clave guardada y cifrada para este equipo."}
         </p>
         <div className="row">
           <input
@@ -65,10 +107,15 @@ export function SettingsPanel({
           />
           <button
             type="button"
-            disabled={apiKey.trim().length === 0 || saving}
+            disabled={
+              apiKey.trim().length === 0 ||
+              saving ||
+              (portable && passphrase.trim().length === 0)
+            }
             onClick={() => {
-              onSaveApiKey(apiKey.trim());
+              onSaveApiKey(apiKey.trim(), portable ? passphrase : undefined);
               setApiKey("");
+              setPassphrase("");
             }}
           >
             Guardar clave
@@ -79,9 +126,37 @@ export function SettingsPanel({
             </button>
           )}
         </div>
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={portable}
+            onChange={(event) => setPortable(event.target.checked)}
+          />
+          Poder usar esta clave en otros ordenadores
+        </label>
+
+        {portable && (
+          <div className="row">
+            <input
+              id="key-passphrase"
+              type="password"
+              value={passphrase}
+              placeholder="Contraseña para la clave"
+              autoComplete="off"
+              aria-label="Contraseña para la clave"
+              onChange={(event) => setPassphrase(event.target.value)}
+            />
+          </div>
+        )}
+
         <p className="muted small">
-          La clave se cifra con la cuenta de Windows de este equipo. Si copias la carpeta a otro
-          ordenador, tendrás que volver a introducirla.
+          {portable
+            ? "La clave se cifrará con esa contraseña y funcionará en cualquier ordenador " +
+              "al que copies la carpeta. Tendrás que escribirla al empezar cada sesión, y " +
+              "si la olvidas habrá que volver a introducir la clave."
+            : "La clave se cifra con la cuenta de Windows de este equipo. Es lo más cómodo, " +
+              "pero si copias la carpeta a otro ordenador tendrás que volver a introducirla."}
         </p>
       </div>
 
@@ -134,7 +209,38 @@ export function SettingsPanel({
         />
         <p className="muted small">
           Más sensibilidad detecta mejor la frase, pero aumenta los falsos positivos en un aula
-          con ruido.
+          con ruido. Mide el efecto con scripts/measure_wakeword.py antes de subirla.
+        </p>
+      </div>
+
+      <div className="field">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.wake_vad_threshold > 0}
+            onChange={(event) => update({ wake_vad_threshold: event.target.checked ? 0.5 : 0 })}
+          />
+          Activar solo cuando haya voz
+        </label>
+        <p className="muted small">
+          Descarta activaciones que no coinciden con una persona hablando: sillas, puertas o el
+          ventilador del proyector no pueden despertar al asistente. Déjalo activado salvo que
+          estés midiendo.
+        </p>
+      </div>
+
+      <div className="field">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.echo_guard_margin > 0}
+            onChange={(event) => update({ echo_guard_margin: event.target.checked ? 0.15 : 0 })}
+          />
+          Evitar que el asistente se oiga a sí mismo
+        </label>
+        <p className="muted small">
+          Mientras el asistente habla, exige una activación más clara para no confundir su
+          propia voz con una interrupción. Puedes desactivarlo si usas auriculares.
         </p>
       </div>
 

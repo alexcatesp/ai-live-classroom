@@ -112,3 +112,93 @@ def test_restarting_resets_the_statistics(engine: FakeAudioEngine):
     listener.stop()
     listener.start()
     assert listener.stats.frames_processed == 0
+
+
+# -- echo guard (risk R-6) -----------------------------------------------
+
+
+def speaking_machine() -> SessionStateMachine:
+    machine = listening_machine()
+    for event in (
+        Event.WAKE_WORD_DETECTED,
+        Event.CAPTURE_STARTED,
+        Event.REQUEST_CAPTURED,
+        Event.RESPONSE_STARTED,
+    ):
+        machine.dispatch(event)
+    return machine
+
+
+def test_the_assistant_cannot_interrupt_itself(engine: FakeAudioEngine, frames):
+    """A marginal detection while the speakers are on is the assistant's own
+    voice coming back through the microphone, not somebody in the room."""
+    machine = speaking_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([0.70]), machine)
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.SPEAKING  # the answer keeps playing
+    assert listener.stats.interruptions == 0
+    assert listener.stats.echo_suppressions == 1
+
+
+def test_a_person_speaking_over_the_assistant_still_interrupts(
+    engine: FakeAudioEngine, frames
+):
+    """Barge-in survives the guard (spec section 6.2): someone a metre from the
+    microphone is louder and clearer than the speakers bleeding back into it."""
+    machine = speaking_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([0.95]), machine)
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.INTERRUPTED
+    assert listener.stats.interruptions == 1
+    assert listener.stats.echo_suppressions == 0
+
+
+def test_the_guard_only_applies_while_the_speakers_are_on(
+    engine: FakeAudioEngine, frames
+):
+    machine = listening_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([0.70]), machine)
+    listener.start()
+    engine.playing = False
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.ACTIVATED
+    assert listener.stats.echo_suppressions == 0
+
+
+def test_the_guard_can_be_switched_off(engine: FakeAudioEngine, frames):
+    """A classroom with headphones has no echo path to guard against."""
+    machine = speaking_machine()
+    listener = WakeWordListener(
+        engine, ScriptedWakeWordDetector([0.70]), machine, echo_guard_margin=0.0
+    )
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.INTERRUPTED
+
+
+def test_suppressions_are_counted_so_the_margin_can_be_tuned(
+    engine: FakeAudioEngine, frames
+):
+    machine = speaking_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([0.7, 0.7, 0.7]), machine)
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(3))
+
+    # The refractory window lets only the first of the three reach the guard.
+    assert listener.stats.echo_suppressions == 1
+    assert listener.stats.frames_processed == 3

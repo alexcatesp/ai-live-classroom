@@ -19,11 +19,22 @@ from pathlib import Path
 
 from ..audio.devices import DeviceInventory
 from ..audio.wakeword import BASE_MODELS_SUBFOLDER, missing_base_models, model_filename
-from ..realtime.client import HandshakeStatus, RealtimeClient
+from ..realtime.client import (
+    HANDSHAKE_WARNING_SECONDS,
+    HandshakeStatus,
+    RealtimeClient,
+)
 
 logger = logging.getLogger(__name__)
 
 TLS_EXPIRY_WARNING_DAYS = 14
+
+# Risk R-3. A school that inspects HTTPS re-issues certificates from its own
+# authority, so the chain validates against the machine's trust store but the
+# issuer is not the public CA the API actually uses. Naming the issuer turns
+# "something is wrong with the network" into "this proxy is in the way", which
+# is the sentence the administrator needs to hear.
+EXPECTED_ISSUER_HINTS = ("google", "digicert", "let's encrypt", "isrg", "globalsign", "amazon")
 
 
 class CheckStatus(StrEnum):
@@ -240,9 +251,31 @@ async def check_tls(host: str, timeout: float = 8.0) -> CheckResult:
             "Comprueba el cortafuegos y el proxy del equipo.",
         )
 
+    issuer = _certificate_issuer(certificate)
+    intercepted = issuer is not None and not any(
+        hint in issuer.lower() for hint in EXPECTED_ISSUER_HINTS
+    )
+    if intercepted:
+        # The chain validated, so traffic flows; but it validated against a
+        # certificate the school installed, which means someone is reading it.
+        return CheckResult(
+            "tls",
+            label,
+            CheckStatus.WARNING,
+            f"El certificado de '{host}' lo emite '{issuer}', no una autoridad pública. "
+            "La red del centro está inspeccionando el tráfico HTTPS.",
+            "La conexión funcionará, pero el tráfico con la API pasa por un equipo del "
+            "centro. Coméntalo con el administrador antes de usar la aplicación con "
+            "datos del alumnado.",
+        )
+
+    described = f"Certificado de '{host}' verificado"
+    if issuer:
+        described += f", emitido por '{issuer}'"
+
     expires_at = _certificate_expiry(certificate)
     if expires_at is None:
-        return CheckResult("tls", label, CheckStatus.OK, f"Certificado de '{host}' verificado.")
+        return CheckResult("tls", label, CheckStatus.OK, described + ".")
     days_left = (expires_at - datetime.now(UTC)).days
     if days_left < 0:
         return CheckResult(
@@ -260,9 +293,20 @@ async def check_tls(host: str, timeout: float = 8.0) -> CheckResult:
             CheckStatus.WARNING,
             f"El certificado de '{host}' caduca en {days_left} día(s).",
         )
-    return CheckResult(
-        "tls", label, CheckStatus.OK, f"Certificado verificado, válido {days_left} día(s) más."
-    )
+    return CheckResult("tls", label, CheckStatus.OK, f"{described}, válido {days_left} día(s) más.")
+
+
+def _certificate_issuer(certificate: dict) -> str | None:
+    """The organisation named in the certificate's issuer, if any.
+
+    Python hands the issuer over as nested tuples of (key, value) pairs; the
+    organisation name is the part a person recognises.
+    """
+    for group in certificate.get("issuer", ()):
+        for entry in group:
+            if len(entry) == 2 and entry[0] == "organizationName":
+                return str(entry[1])
+    return None
 
 
 def _certificate_expiry(certificate: dict) -> datetime | None:
@@ -342,11 +386,32 @@ async def check_api_key(api_key: str | None, base_url: str, timeout: float = 10.
 
 
 async def check_realtime(client: RealtimeClient, model: str) -> CheckResult:
-    """D-03: open the Realtime session, confirm it, close it. No conversation."""
+    """D-03: open the Realtime session, confirm it, close it. No conversation.
+
+    The elapsed time is reported because risk R-2 -- WebSocket from the backend
+    versus WebRTC from the frontend -- is a question about latency, and this is
+    the first place a real number for it exists.
+    """
     label = "Conexión Realtime"
     result = await client.check_connection(model)
+
     if result.ok:
-        return CheckResult("realtime", label, CheckStatus.OK, result.detail)
+        timing = (
+            f" Tiempo de establecimiento: {result.elapsed_seconds:.2f} s."
+            if result.elapsed_seconds is not None
+            else ""
+        )
+        if result.slow:
+            return CheckResult(
+                "realtime",
+                label,
+                CheckStatus.WARNING,
+                result.detail + timing,
+                f"La conexión tarda más de {HANDSHAKE_WARNING_SECONDS:.1f} s en establecerse. "
+                "La clase funcionará, pero las respuestas empezarán con retraso. "
+                "Anótalo: es la medida que decide si hace falta cambiar de transporte.",
+            )
+        return CheckResult("realtime", label, CheckStatus.OK, result.detail + timing)
     status = (
         CheckStatus.WARNING if result.status is HandshakeStatus.BLOCKED else CheckStatus.FAILED
     )

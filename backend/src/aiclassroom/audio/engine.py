@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from typing import Protocol
 
@@ -29,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 FrameCallback = Callable[[np.ndarray], None]
 
+# How long after playback stops the room is still considered "loud". Covers the
+# speaker decay and the microphone buffer already in flight (risk R-6).
+ECHO_TAIL_SECONDS = 0.3
+
 
 class AudioError(RuntimeError):
     """Raised when capture or playback cannot be started."""
@@ -39,6 +44,14 @@ class AudioEngine(Protocol):
 
     @property
     def is_capturing(self) -> bool: ...
+
+    @property
+    def is_playing(self) -> bool:
+        """True while the assistant's own voice is coming out of the speakers.
+
+        The listener needs this to keep the assistant from hearing itself
+        (risk R-6).
+        """
 
     def start_capture(self, on_frame: FrameCallback) -> None:
         """Begin delivering `FRAME_SAMPLES`-long int16 frames to `on_frame`."""
@@ -66,11 +79,30 @@ class SoundDeviceAudioEngine:
         self._on_frame: FrameCallback | None = None
         self._lock = threading.RLock()
         self._pending = np.empty(0, dtype=np.int16)
+        self._playing_until = 0.0
 
     @property
     def is_capturing(self) -> bool:
         with self._lock:
             return self._stream is not None
+
+    @property
+    def is_playing(self) -> bool:
+        """Whether audio is still leaving the speakers.
+
+        PortAudio's own stream state is consulted first; the deadline is the
+        fallback for the moment between queueing samples and the stream
+        reporting itself active.
+        """
+        if time.monotonic() < self._playing_until:
+            return True
+        try:
+            import sounddevice
+
+            stream = sounddevice.get_stream()
+            return bool(stream and stream.active)
+        except Exception:  # noqa: BLE001 - no stream is simply "not playing"
+            return False
 
     def start_capture(self, on_frame: FrameCallback) -> None:
         with self._lock:
@@ -147,9 +179,14 @@ class SoundDeviceAudioEngine:
         if not inventory.has_output:
             raise AudioError("Windows no ofrece ningún dispositivo de salida de audio.")
         device_index = resolve_device(inventory.outputs, self._output_device_name)
+        duration = samples.size / sample_rate if sample_rate else 0.0
+        # Marked before playback starts, so the echo guard is already closed by
+        # the time the first sample reaches the speakers.
+        self._playing_until = time.monotonic() + duration + ECHO_TAIL_SECONDS
         try:
             sounddevice.play(samples, samplerate=sample_rate, device=device_index, blocking=True)
         except Exception as exc:  # noqa: BLE001
+            self._playing_until = 0.0
             raise AudioError(f"No se pudo reproducir el audio: {exc}") from exc
 
     def stop_playback(self) -> None:
@@ -159,6 +196,9 @@ class SoundDeviceAudioEngine:
             sounddevice.stop()
         except Exception:  # noqa: BLE001
             logger.exception("Fallo al detener la reproducción.")
+        finally:
+            # The room still carries the tail of what was already emitted.
+            self._playing_until = time.monotonic() + ECHO_TAIL_SECONDS
 
 
 class FakeAudioEngine:
@@ -174,10 +214,15 @@ class FakeAudioEngine:
         self.played: list[tuple[np.ndarray, int]] = []
         self.playback_stopped = 0
         self.fail_on_capture: str | None = None
+        self.playing = False
 
     @property
     def is_capturing(self) -> bool:
         return self._on_frame is not None
+
+    @property
+    def is_playing(self) -> bool:
+        return self.playing
 
     def start_capture(self, on_frame: FrameCallback) -> None:
         if self.fail_on_capture:
@@ -200,6 +245,7 @@ class FakeAudioEngine:
 
     def stop_playback(self) -> None:
         self.playback_stopped += 1
+        self.playing = False
 
 
 def tone(seconds: float = 0.4, frequency: float = 440.0, sample_rate: int = PLAYBACK_SAMPLE_RATE):

@@ -8,6 +8,7 @@ import json
 import pytest
 
 from aiclassroom.realtime.client import (
+    HANDSHAKE_WARNING_SECONDS,
     HandshakeResult,
     HandshakeStatus,
     StubRealtimeClient,
@@ -100,3 +101,48 @@ async def test_the_stub_records_the_model_it_was_asked_about():
     stub = StubRealtimeClient(HandshakeResult(HandshakeStatus.OK, "listo"))
     assert (await stub.check_connection("gpt-realtime")).ok
     assert stub.calls == ["gpt-realtime"]
+
+
+# -- latency (risk R-2) --------------------------------------------------
+
+
+def test_a_successful_handshake_reports_how_long_it_took():
+    """R-2 is a question about latency; this is where the first number is."""
+    raw = json.dumps({"type": "session.created", "session": {"id": "s", "model": "m"}})
+    subject = client()
+
+    async def immediate(_model):
+        return subject._interpret_first_event(raw, "gpt-realtime")
+
+    subject._handshake = immediate
+    result = asyncio.run(subject.check_connection("gpt-realtime"))
+
+    assert result.ok
+    assert result.elapsed_seconds is not None
+    assert result.elapsed_seconds >= 0.0
+
+
+def test_a_timeout_still_reports_the_time_spent_waiting():
+    async def never_answers(_model):
+        await asyncio.sleep(10)
+
+    subject = WebSocketRealtimeClient(api_key="sk-test", timeout=0.05)
+    subject._handshake = never_answers
+    result = asyncio.run(subject.check_connection("gpt-realtime"))
+
+    assert result.status is HandshakeStatus.TIMEOUT
+    assert result.elapsed_seconds >= 0.05
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected_slow"),
+    [(0.2, False), (HANDSHAKE_WARNING_SECONDS + 0.1, True), (None, False)],
+)
+def test_a_slow_handshake_is_flagged(elapsed, expected_slow):
+    result = HandshakeResult(HandshakeStatus.OK, "listo", elapsed_seconds=elapsed)
+    assert result.slow is expected_slow
+
+
+def test_a_failed_handshake_is_never_reported_as_merely_slow():
+    result = HandshakeResult(HandshakeStatus.INVALID_KEY, "no", elapsed_seconds=99.0)
+    assert result.slow is False

@@ -57,6 +57,9 @@ export interface Settings {
   wake_phrase: string;
   wake_sensitivity: number;
   wake_refractory_seconds: number;
+  wake_vad_threshold: number;
+  wake_confirmation_frames: number;
+  echo_guard_margin: number;
   max_response_seconds: number;
   materials_dir: string | null;
   transcript_retention: "discard" | "session_only" | "keep";
@@ -67,6 +70,10 @@ export interface Settings {
 export interface SettingsResponse {
   settings: Settings;
   api_key_configured: boolean;
+  /** The stored key is sealed with a passphrase, so it travels between PCs. */
+  requires_passphrase: boolean;
+  /** Whether the key can be read right now. */
+  unlocked: boolean;
 }
 
 export interface AudioDevice {
@@ -86,11 +93,14 @@ export interface ListeningStatus {
   listening: boolean;
   activations: number;
   interruptions: number;
+  echo_suppressions: number;
   frames_processed: number;
   seconds_listening: number;
   threshold: number | null;
   recent_scores: number[];
   phrase: string | null;
+  vad_enabled: boolean;
+  confirmation_frames: number | null;
 }
 
 export type BackendEvent =

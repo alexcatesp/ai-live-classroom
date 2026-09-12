@@ -62,6 +62,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def secret_store_works() -> tuple[bool, str]:
+    """Round-trip a secret through the passphrase store.
+
+    `cryptography` carries a native module, and a build where it failed to
+    bundle would look healthy until the teacher tried to save an API key. This
+    is a core dependency, so a failure here fails the whole selftest.
+    """
+    from .config.secrets import PassphraseSecretStore
+
+    probe = "sk-comprobacion"
+    try:
+        store = PassphraseSecretStore("contraseña de comprobación")
+        if store.unprotect(store.protect(probe)) != probe:
+            return False, "el cifrado no devuelve el mismo valor"
+    except Exception as exc:  # noqa: BLE001 - any failure is the answer
+        return False, str(exc)
+    return True, "almacén de claves disponible"
+
+
 def wakeword_engine_available() -> tuple[bool, str]:
     """Whether openWakeWord can be imported from this build.
 
@@ -117,6 +136,11 @@ def selftest(
               file=sys.stderr)
         return 1
 
+    secrets_ok, secrets_detail = secret_store_works()
+    if not secrets_ok:
+        print(f"FALLO: el almacén de claves no funciona: {secrets_detail}", file=sys.stderr)
+        return 1
+
     wakeword_ok, wakeword_detail = wakeword_engine_available()
     if require_wakeword and not wakeword_ok:
         print(f"FALLO: el motor de palabra clave no está empaquetado: {wakeword_detail}",
@@ -136,6 +160,7 @@ def selftest(
                 "audio_inputs": len(inventory.inputs),
                 "audio_outputs": len(inventory.outputs),
                 "wakeword_engine": wakeword_ok,
+                "secret_store": secrets_ok,
             },
             ensure_ascii=False,
         )

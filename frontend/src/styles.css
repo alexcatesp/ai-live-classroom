@@ -305,3 +305,53 @@ input[type="range"] {
   width: 100%;
   max-width: 420px;
 }
+
+/* -- guards and unlock ---------------------------------------------------- */
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  margin: 10px 0 4px;
+}
+
+.checkbox input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  min-width: 0;
+}
+
+.unlock {
+  border: 1px solid var(--tone-warning);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(217, 155, 22, 0.08);
+}
+
+.guards {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.guards li {
+  font-size: 0.8rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.guard-on {
+  color: var(--tone-listening);
+  border-color: var(--tone-listening);
+}
+
+.guard-off {
+  color: var(--tone-warning);
+  border-color: var(--tone-warning);
+}

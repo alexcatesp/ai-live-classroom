@@ -50,7 +50,7 @@ Todo lo que genera la aplicacion vive en la carpeta data\:
     data\materials\   materiales docentes (a partir de la Fase 1)
     data\sessions\    sesiones
     data\metrics\     metricas de uso
-    data\models\      modelo de la palabra de activacion
+    data\models\      modelos de la palabra de activacion
 
 Para borrar todo, borra la carpeta data\. Para llevarte la configuracion a
 otro equipo, copia data\ y vuelve a introducir la clave.
@@ -76,4 +76,9 @@ SI ALGO FALLA
       hablas. Si se activa sola, bajala.
 
   Falta el modelo de activacion
-      Debe estar en data\models\oye_chat.onnx.
+      En data\models\ deben estar:
+          oye_chat.onnx
+          openwakeword\melspectrogram.onnx
+          openwakeword\embedding_model.onnx
+      Los descarga y genera quien construye la version portable; el equipo
+      del aula no descarga nada.

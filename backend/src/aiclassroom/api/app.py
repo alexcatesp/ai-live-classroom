@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -285,5 +284,3 @@ def build_context(
         token=token or secrets.token_urlsafe(32),
     )
 
-
-SettingsFactory = Callable[[], Settings]

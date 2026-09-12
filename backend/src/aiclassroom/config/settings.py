@@ -89,17 +89,34 @@ class DataPaths(BaseModel):
         return self
 
 
-def default_data_root() -> Path:
-    """Where the portable build keeps its data.
+# In the portable layout of spec section 17 the backend sits two folders below
+# the root that holds `data/`:
+#
+#     AI-Classroom-Live/          <- the root the teacher copies
+#       AI-Classroom-Live.exe
+#       runtime/backend/aiclassroom-backend.exe
+#       data/
+PORTABLE_DEPTH = 3  # runtime/backend/aiclassroom-backend.exe -> the root
 
-    `AICLASSROOM_DATA_DIR` wins, so the CI and the tests can redirect it. Then
-    the `data/` folder beside the frozen executable, which is what the portable
-    layout in spec section 17 describes. Falling back to the current working
-    directory only happens when running from source.
+
+def portable_root(executable: Path) -> Path:
+    """The folder holding `data/`, given the backend executable's path."""
+    resolved = executable.resolve()
+    for _ in range(PORTABLE_DEPTH):
+        resolved = resolved.parent
+    return resolved
+
+
+def default_data_root() -> Path:
+    """Where the application keeps its data.
+
+    The shell passes `--data-dir` explicitly, because it knows where it was
+    started from; this is the fallback for running the backend by hand and for
+    the environment override the tests and the CI use.
     """
     override = os.environ.get("AICLASSROOM_DATA_DIR")
     if override:
         return Path(override).expanduser().resolve()
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent.parent / "data"
+        return portable_root(Path(sys.executable)) / "data"
     return Path.cwd() / "data"

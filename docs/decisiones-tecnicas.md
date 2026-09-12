@@ -186,6 +186,52 @@ pantalla, en español de España (spec §12).
 
 ---
 
+## Problemas encontrados durante la Fase 0
+
+Anotados conforme aparecieron, como pide la spec §24.
+
+### P-1 — El ejecutable empaquetado no arrancaba
+
+PyInstaller ejecuta el script de entrada como módulo de nivel superior, así que
+los imports relativos de `aiclassroom/main.py` fallaban en cuanto se congelaba
+el binario: funcionaba en desarrollo y se rompía al empaquetar. Resuelto con
+`backend/entrypoint.py`, un envoltorio que importa el paquete correctamente.
+
+Lección: el empaquetado hay que probarlo, no suponerlo. Por eso el CI ejecuta
+ahora `--selftest` sobre el binario ya empaquetado.
+
+### P-2 — La carpeta `data/` se resolvía en el sitio equivocado
+
+En la distribución de la spec §17 el backend vive en `runtime/backend/`, dos
+carpetas por debajo de la raíz que contiene `data/`. La primera versión subía
+un solo nivel, con lo que la configuración del profesor habría acabado dentro
+de `runtime/` y se habría perdido en la siguiente actualización.
+
+Resuelto de dos formas a la vez: el shell pasa `--data-dir` explícitamente,
+porque sabe desde dónde se le ha lanzado, y el cálculo de respaldo del backend
+está fijado con un test (`test_the_portable_root_is_found_from_the_backend_executable`).
+El CI además comprueba que la carpeta portable resuelve la ruta esperada.
+
+### P-3 — PortAudio puede faltar en el paquete sin que nadie se entere
+
+`sounddevice` carga PortAudio de una biblioteca que debe viajar dentro del
+paquete. Si falta, la aplicación arranca con normalidad y solo falla al abrir
+el micrófono, es decir, delante de los alumnos.
+
+Resuelto con `--selftest --require-audio`, que el CI de Windows ejecuta sobre
+el binario empaquetado: un build sin PortAudio falla ahí y no en el aula. Cero
+dispositivos es una respuesta válida (el runner no tiene tarjeta de sonido);
+una biblioteca ausente, no.
+
+### P-4 — Tauri no compila sin el sidecar
+
+`tauri::generate_context!` exige que exista `binaries/aiclassroom-backend-<triple>`,
+de modo que el shell no se puede compilar sin haber empaquetado antes el
+backend. El trabajo de Linux del CI usa un archivo de relleno para poder pasar
+clippy; el de Windows es el que compila contra el backend real.
+
+---
+
 ## Problemas y riesgos abiertos
 
 | # | Riesgo | Estado |
@@ -196,3 +242,4 @@ pantalla, en español de España (spec §12).
 | R-4 | Peso de la carpeta portable con el modelo de embeddings | A vigilar (D-08) |
 | R-5 | Reintroducir la clave al mover la carpeta entre equipos | Aceptado (D-07) |
 | R-6 | Ausencia de cancelación de eco al reproducir y escuchar a la vez | Pendiente de Fase 1 (D-05) |
+| R-7 | Un antivirus del centro puede bloquear un ejecutable sin firmar | Sin comprobar en equipos reales |

@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tests y lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Instalar dependencias
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The suite runs here without PortAudio on purpose: the audio engine, the
+      # detector and the Realtime client all sit behind interfaces with test
+      # doubles, so a runner with no sound card still exercises them.
+      - name: Tests
+        working-directory: backend
+        run: python -m pytest -q
+
+      - name: Lint
+        working-directory: backend
+        run: python -m ruff check src tests
+
+  frontend:
+    name: Frontend (tests, tipos y build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: frontend
+        run: npm ci
+
+      - name: Tests
+        working-directory: frontend
+        run: npm run test
+
+      - name: Tipos y build
+        working-directory: frontend
+        run: npm run build
+
+  shell:
+    name: Shell de escritorio (compilación)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Dependencias del sistema para Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      # Tauri refuses to build without the sidecar, and the real one is only
+      # produced by the Windows job. A placeholder is enough to type-check the
+      # shell; the Windows job is what proves it links against the real backend.
+      - name: Sidecar de relleno
+        run: |
+          mkdir -p src-tauri/binaries
+          triple=$(rustc -vV | sed -n 's/^host: //p')
+          touch "src-tauri/binaries/aiclassroom-backend-${triple}"
+          chmod +x "src-tauri/binaries/aiclassroom-backend-${triple}"
+
+      - name: Frontend para el contexto de Tauri
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+  portable:
+    name: Carpeta portable para Windows
+    runs-on: windows-latest
+    needs: [backend, frontend, shell]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Empaquetar el backend
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "." pyinstaller
+          python -m PyInstaller aiclassroom-backend.spec --noconfirm --clean
+
+      # The first real check of D-02: the frozen executable must start on a
+      # machine with no Python, and it must carry PortAudio -- an application
+      # that cannot open a microphone is useless in a classroom, and finding
+      # that out here costs minutes instead of a lesson.
+      - name: Comprobar el ejecutable empaquetado
+        working-directory: backend
+        run: |
+          $env:AICLASSROOM_DATA_DIR = "$env:RUNNER_TEMP\selftest"
+          .\dist\backend\aiclassroom-backend.exe --selftest --require-audio
+          if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
+
+      - name: Colocar el sidecar para Tauri
+        run: |
+          $triple = (rustc -vV | Select-String "^host:").ToString().Split(" ")[1]
+          New-Item -ItemType Directory -Force -Path src-tauri\binaries | Out-Null
+          Copy-Item backend\dist\backend\aiclassroom-backend.exe `
+                    "src-tauri\binaries\aiclassroom-backend-$triple.exe"
+
+      - name: Construir el frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Construir el shell
+        working-directory: src-tauri
+        run: cargo build --release
+
+      - name: Montar la carpeta portable
+        run: |
+          $staging = "release\AI-Classroom-Live"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item src-tauri\target\release\ai-classroom-live.exe `
+                    "$staging\AI-Classroom-Live.exe"
+          New-Item -ItemType Directory -Force -Path "$staging\runtime" | Out-Null
+          Copy-Item backend\dist\backend "$staging\runtime" -Recurse
+          foreach ($folder in @("config", "materials", "sessions", "metrics", "models")) {
+            New-Item -ItemType Directory -Force -Path "$staging\data\$folder" | Out-Null
+          }
+          Copy-Item docs\README-portable.txt "$staging\README.txt"
+
+      # Runs the packaged backend from inside the portable layout, which is the
+      # only place the data folder resolves the way the teacher will see it.
+      - name: Comprobar la carpeta portable
+        run: |
+          $backend = "release\AI-Classroom-Live\runtime\backend\aiclassroom-backend.exe"
+          $output = & $backend --selftest --require-audio
+          if ($LASTEXITCODE -ne 0) { throw "La carpeta portable no supera el autotest." }
+          Write-Host $output
+          $report = $output | ConvertFrom-Json
+          $expected = (Resolve-Path "release\AI-Classroom-Live\data").Path
+          if ($report.data_dir -ne $expected) {
+            throw "El backend usa $($report.data_dir) en lugar de $expected."
+          }
+          if (-not $report.frozen) { throw "El ejecutable no está empaquetado." }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Classroom-Live-portable
+          path: release/AI-Classroom-Live
+          if-no-files-found: error

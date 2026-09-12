@@ -114,3 +114,24 @@ def test_saving_is_atomic(store: SettingsStore):
     store.save(Settings())
     assert not list(store.paths.config_dir.glob("*.tmp"))
     assert json.loads(store.paths.settings_file.read_text(encoding="utf-8"))
+
+
+def test_the_portable_root_is_found_from_the_backend_executable():
+    """Spec section 17 layout: runtime/backend/ sits two folders below the root.
+
+    Getting this wrong would put the teacher's settings inside runtime/ instead
+    of data/, where the next build would overwrite them.
+    """
+    from pathlib import Path
+
+    from aiclassroom.config.settings import portable_root
+
+    executable = Path("/media/usb/AI-Classroom-Live/runtime/backend/aiclassroom-backend.exe")
+    assert portable_root(executable) == Path("/media/usb/AI-Classroom-Live")
+
+
+def test_the_data_directory_override_wins(monkeypatch, tmp_path):
+    from aiclassroom.config.settings import default_data_root
+
+    monkeypatch.setenv("AICLASSROOM_DATA_DIR", str(tmp_path / "otra"))
+    assert default_data_root() == tmp_path / "otra"

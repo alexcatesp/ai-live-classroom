@@ -49,17 +49,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="comprueba que el ejecutable arranca en este equipo y termina",
     )
+    parser.add_argument(
+        "--require-audio",
+        action="store_true",
+        help="con --selftest, falla si no se puede cargar la biblioteca de audio",
+    )
     return parser.parse_args(argv)
 
 
-def selftest(paths: DataPaths) -> int:
+def selftest(paths: DataPaths, require_audio: bool = False) -> int:
     """Prove the frozen executable runs here, without opening any device.
 
     The portable build is verified in CI with this (D-09): it exercises the
     bundled Python, the data folder and the application wiring on a machine
     with no audio hardware and no API key.
+
+    With `require_audio` it also fails when PortAudio is missing from the
+    bundle. A runner with no sound card is fine -- zero devices is a valid
+    answer; a missing library is not, because it would reach the classroom as
+    an application that can never open a microphone.
     """
     from fastapi.testclient import TestClient
+
+    from .audio.devices import probe_devices
 
     context = build_context(token="selftest")
     application = create_app(context)
@@ -78,6 +90,12 @@ def selftest(paths: DataPaths) -> int:
             return 1
         payload = state.json()
 
+    inventory = probe_devices()
+    if require_audio and inventory.error:
+        print(f"FALLO: la biblioteca de audio no está disponible: {inventory.error}",
+              file=sys.stderr)
+        return 1
+
     print(
         json.dumps(
             {
@@ -87,6 +105,9 @@ def selftest(paths: DataPaths) -> int:
                 "data_dir": str(paths.root),
                 "frozen": bool(getattr(sys, "frozen", False)),
                 "python": sys.version.split()[0],
+                "audio_library": inventory.error is None,
+                "audio_inputs": len(inventory.inputs),
+                "audio_outputs": len(inventory.outputs),
             },
             ensure_ascii=False,
         )
@@ -102,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = DataPaths(root=root).ensure()
 
     if arguments.selftest:
-        return selftest(paths)
+        return selftest(paths, require_audio=arguments.require_audio)
 
     import uvicorn
 

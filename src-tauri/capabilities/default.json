@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "La interfaz solo habla con el backend local por HTTP, así que no necesita ninguna API de Tauri más allá de la ventana.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

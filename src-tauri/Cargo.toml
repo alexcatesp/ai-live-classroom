@@ -1,0 +1,26 @@
+[package]
+name = "ai-classroom-live"
+version = "0.1.0"
+description = "AI Classroom Live - asistente oral de aula"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Only for the startup timeout on the backend handshake.
+tokio = { version = "1", features = ["time"] }
+
+[features]
+# Used by `tauri dev`; see https://v2.tauri.app
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

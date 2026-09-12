@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/binaries/
+
+# Portable build output
+release/
+portable/
+
+# Local data and secrets — never commit (spec §24)
+data/
+config/settings.json
+.env
+*.onnx
+*.tflite

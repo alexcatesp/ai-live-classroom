@@ -1,0 +1,128 @@
+"""Backend entry point.
+
+Started by the Tauri shell as a sidecar. It binds to a free loopback port and
+announces the port and the session token on stdout as a single line, which the
+shell reads before opening the window. Nothing is written to a fixed port or a
+well-known file, so two copies of the portable folder can run side by side.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import socket
+import sys
+
+from .api.app import build_context, create_app
+from .config.settings import DataPaths, default_data_root
+
+READY_PREFIX = "AICLASSROOM_READY "
+LOOPBACK = "127.0.0.1"
+
+logger = logging.getLogger(__name__)
+
+
+def find_free_port() -> int:
+    """Ask the OS for an unused loopback port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind((LOOPBACK, 0))
+        return probe.getsockname()[1]
+
+
+def configure_logging(verbose: bool = False) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        stream=sys.stderr,  # stdout carries the handshake line only
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="aiclassroom-backend")
+    parser.add_argument("--port", type=int, default=0, help="0 elige un puerto libre")
+    parser.add_argument("--token", default=None, help="token de sesión; se genera si se omite")
+    parser.add_argument("--data-dir", default=None, help="carpeta de datos de la aplicación")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="comprueba que el ejecutable arranca en este equipo y termina",
+    )
+    return parser.parse_args(argv)
+
+
+def selftest(paths: DataPaths) -> int:
+    """Prove the frozen executable runs here, without opening any device.
+
+    The portable build is verified in CI with this (D-09): it exercises the
+    bundled Python, the data folder and the application wiring on a machine
+    with no audio hardware and no API key.
+    """
+    from fastapi.testclient import TestClient
+
+    context = build_context(token="selftest")
+    application = create_app(context)
+    with TestClient(application) as client:
+        health = client.get("/health")
+        if health.status_code != 200:
+            print(f"FALLO: /health devolvió {health.status_code}", file=sys.stderr)
+            return 1
+        unauthorised = client.get("/api/state")
+        if unauthorised.status_code != 401:
+            print("FALLO: /api/state respondió sin token", file=sys.stderr)
+            return 1
+        state = client.get("/api/state", headers={"X-AIClassroom-Token": "selftest"})
+        if state.status_code != 200:
+            print(f"FALLO: /api/state devolvió {state.status_code}", file=sys.stderr)
+            return 1
+        payload = state.json()
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "version": health.json()["version"],
+                "state": payload["state"],
+                "data_dir": str(paths.root),
+                "frozen": bool(getattr(sys, "frozen", False)),
+                "python": sys.version.split()[0],
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = parse_args(argv)
+    configure_logging(arguments.verbose)
+
+    root = default_data_root() if arguments.data_dir is None else arguments.data_dir
+    paths = DataPaths(root=root).ensure()
+
+    if arguments.selftest:
+        return selftest(paths)
+
+    import uvicorn
+
+    from .config.store import SettingsStore
+
+    port = arguments.port or find_free_port()
+    store = SettingsStore(paths=paths)
+    context = build_context(store=store, token=arguments.token)
+    application = create_app(context)
+
+    # The shell waits for this line before showing the window.
+    print(
+        READY_PREFIX + json.dumps({"port": port, "token": context.token}),
+        flush=True,
+    )
+    logger.info("Backend escuchando en http://%s:%s", LOOPBACK, port)
+
+    uvicorn.run(application, host=LOOPBACK, port=port, log_config=None, access_log=False)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

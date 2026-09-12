@@ -50,6 +50,18 @@ def controller(store, machine, engine, detector) -> SessionController:
 
 
 @pytest.fixture
+def wakeword_models(paths):
+    """A models folder laid out the way the portable build ships it."""
+    from aiclassroom.audio.wakeword import base_model_paths
+
+    (paths.models_dir / "oye_chat.onnx").write_bytes(b"x" * 2048)
+    for path in base_model_paths(paths.models_dir):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * 1024)
+    return paths.models_dir
+
+
+@pytest.fixture
 def frames():
     """Builds `count` frames of silence, shaped as PortAudio would deliver them."""
 

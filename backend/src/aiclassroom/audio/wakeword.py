@@ -45,8 +45,28 @@ def threshold_for(sensitivity: float) -> float:
     return _MAX_THRESHOLD - (_MAX_THRESHOLD - _MIN_THRESHOLD) * sensitivity
 
 
+# openWakeWord needs two shared models besides the phrase model: a
+# melspectrogram front end and a speech embedding model. It downloads them on
+# first use, which on a classroom PC would mean a download seconds before a
+# lesson on a network that may block it. The build ships them instead, in
+# data/models/openwakeword/ (scripts/fetch_wakeword_runtime.py).
+BASE_MODELS_SUBFOLDER = "openwakeword"
+MELSPEC_MODEL = "melspectrogram.onnx"
+EMBEDDING_MODEL = "embedding_model.onnx"
+
+
 class WakeWordUnavailable(RuntimeError):
     """Raised when no usable detector can be built."""
+
+
+def base_model_paths(models_dir: Path) -> tuple[Path, Path]:
+    """Where the shipped feature extractor lives."""
+    base = models_dir / BASE_MODELS_SUBFOLDER
+    return base / MELSPEC_MODEL, base / EMBEDDING_MODEL
+
+
+def missing_base_models(models_dir: Path) -> list[Path]:
+    return [path for path in base_model_paths(models_dir) if not path.exists()]
 
 
 @dataclass(frozen=True)
@@ -123,6 +143,8 @@ class OpenWakeWordDetector:
         phrase: str,
         sensitivity: float = 0.5,
         refractory_seconds: float = 2.0,
+        melspec_model: Path | None = None,
+        embedding_model: Path | None = None,
     ) -> None:
         try:
             from openwakeword.model import Model
@@ -136,8 +158,20 @@ class OpenWakeWordDetector:
                 f"No se encontró el modelo de palabra clave en {model_path}. "
                 "Genéralo con scripts/train_wakeword.py y colócalo en data/models."
             )
+
+        extra: dict[str, str] = {}
+        if melspec_model is not None and embedding_model is not None:
+            # Passing these explicitly is what stops openWakeWord reaching for
+            # the network mid-class.
+            extra = {
+                "melspec_model_path": str(melspec_model),
+                "embedding_model_path": str(embedding_model),
+            }
+
         try:
-            self._model = Model(wakeword_models=[str(model_path)], inference_framework="onnx")
+            self._model = Model(
+                wakeword_models=[str(model_path)], inference_framework="onnx", **extra
+            )
         except Exception as exc:  # noqa: BLE001 - the library raises broadly
             raise WakeWordUnavailable(f"No se pudo cargar el modelo de activación: {exc}") from exc
 
@@ -232,9 +266,21 @@ def create_detector(
     refractory_seconds: float = 2.0,
 ) -> WakeWordDetector:
     """Build the real detector for `phrase`, or explain why it is unavailable."""
+    missing = missing_base_models(models_dir)
+    if missing:
+        names = ", ".join(path.name for path in missing)
+        raise WakeWordUnavailable(
+            f"Faltan los modelos base de openWakeWord ({names}) en "
+            f"{models_dir / BASE_MODELS_SUBFOLDER}. "
+            "Descárgalos con scripts/fetch_wakeword_runtime.py desde un equipo con conexión."
+        )
+
+    melspec, embedding = base_model_paths(models_dir)
     return OpenWakeWordDetector(
         model_path=models_dir / model_filename(phrase),
         phrase=phrase,
         sensitivity=sensitivity,
         refractory_seconds=refractory_seconds,
+        melspec_model=melspec,
+        embedding_model=embedding,
     )

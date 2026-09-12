@@ -87,3 +87,72 @@ def test_model_filename_follows_the_phrase():
     assert model_filename("Oye Chat") == "oye_chat.onnx"
     assert model_filename("  Oye   Chat  ") == "oye_chat.onnx"
     assert model_filename("") == "wakeword.onnx"
+
+
+# -- integration with the real engine ------------------------------------
+#
+# These run only where the openWakeWord models are actually present, which the
+# build machine arranges with scripts/fetch_wakeword_runtime.py. The CI stays
+# offline, so they are skipped there; locally they are what proves the wiring
+# to the library is real and not just mocked.
+
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from aiclassroom.audio.wakeword import (  # noqa: E402
+    OpenWakeWordDetector,
+    WakeWordUnavailable,
+    base_model_paths,
+    create_detector,
+    missing_base_models,
+)
+
+REAL_MODELS = Path(os.environ.get("AICLASSROOM_TEST_MODELS", "/nonexistent"))
+needs_real_models = pytest.mark.skipif(
+    bool(missing_base_models(REAL_MODELS)),
+    reason="define AICLASSROOM_TEST_MODELS con los modelos de openWakeWord",
+)
+
+
+def test_base_models_are_looked_for_in_the_shipped_subfolder(tmp_path):
+    melspec, embedding = base_model_paths(tmp_path)
+    assert melspec == tmp_path / "openwakeword" / "melspectrogram.onnx"
+    assert embedding == tmp_path / "openwakeword" / "embedding_model.onnx"
+
+
+def test_a_missing_feature_extractor_is_explained_not_downloaded(tmp_path):
+    """Silently downloading mid-class is the failure mode being avoided."""
+    (tmp_path / "oye_chat.onnx").write_bytes(b"x")
+
+    with pytest.raises(WakeWordUnavailable, match="melspectrogram.onnx"):
+        create_detector(tmp_path, "Oye Chat")
+
+
+def test_a_missing_phrase_model_is_explained(wakeword_models):
+    with pytest.raises(WakeWordUnavailable, match="train_wakeword"):
+        create_detector(wakeword_models, "Otra Frase")
+
+
+@needs_real_models
+def test_the_real_engine_scores_frames_without_touching_the_network():
+    """Loads openWakeWord with the shipped models and runs inference on silence."""
+    phrase_models = sorted(REAL_MODELS.glob("*.onnx"))
+    assert phrase_models, "no hay ningún modelo de frase para la prueba"
+
+    melspec, embedding = base_model_paths(REAL_MODELS)
+    detector = OpenWakeWordDetector(
+        model_path=phrase_models[0],
+        phrase="Prueba",
+        melspec_model=melspec,
+        embedding_model=embedding,
+    )
+
+    # Enough frames to fill the model's internal buffers.
+    for _ in range(25):
+        detector.process(FRAME)
+
+    scores = detector.recent_scores()
+    assert len(scores) == 25
+    assert all(0.0 <= score <= 1.0 for score in scores)
+    # Silence must never activate the assistant.
+    assert max(scores) < detector.threshold

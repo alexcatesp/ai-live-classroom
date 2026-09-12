@@ -54,10 +54,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="con --selftest, falla si no se puede cargar la biblioteca de audio",
     )
+    parser.add_argument(
+        "--require-wakeword",
+        action="store_true",
+        help="con --selftest, falla si el motor de palabra clave no está empaquetado",
+    )
     return parser.parse_args(argv)
 
 
-def selftest(paths: DataPaths, require_audio: bool = False) -> int:
+def wakeword_engine_available() -> tuple[bool, str]:
+    """Whether openWakeWord can be imported from this build.
+
+    Packaging it is fiddly -- it drags in scipy and scikit-learn through its own
+    __init__ -- and a bundle missing one of them looks perfectly healthy until
+    the teacher presses "Iniciar clase".
+    """
+    try:
+        from openwakeword.model import Model  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - any import failure is the answer
+        return False, str(exc)
+    return True, "openWakeWord disponible"
+
+
+def selftest(
+    paths: DataPaths, require_audio: bool = False, require_wakeword: bool = False
+) -> int:
     """Prove the frozen executable runs here, without opening any device.
 
     The portable build is verified in CI with this (D-09): it exercises the
@@ -96,6 +117,12 @@ def selftest(paths: DataPaths, require_audio: bool = False) -> int:
               file=sys.stderr)
         return 1
 
+    wakeword_ok, wakeword_detail = wakeword_engine_available()
+    if require_wakeword and not wakeword_ok:
+        print(f"FALLO: el motor de palabra clave no está empaquetado: {wakeword_detail}",
+              file=sys.stderr)
+        return 1
+
     print(
         json.dumps(
             {
@@ -108,6 +135,7 @@ def selftest(paths: DataPaths, require_audio: bool = False) -> int:
                 "audio_library": inventory.error is None,
                 "audio_inputs": len(inventory.inputs),
                 "audio_outputs": len(inventory.outputs),
+                "wakeword_engine": wakeword_ok,
             },
             ensure_ascii=False,
         )
@@ -123,7 +151,11 @@ def main(argv: list[str] | None = None) -> int:
     paths = DataPaths(root=root).ensure()
 
     if arguments.selftest:
-        return selftest(paths, require_audio=arguments.require_audio)
+        return selftest(
+            paths,
+            require_audio=arguments.require_audio,
+            require_wakeword=arguments.require_wakeword,
+        )
 
     import uvicorn
 

@@ -129,7 +129,7 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -e "." pyinstaller
+          pip install -e ".[wakeword]" pyinstaller
           python -m PyInstaller aiclassroom-backend.spec --noconfirm --clean
 
       # The first real check of D-02: the frozen executable must start on a
@@ -140,7 +140,7 @@ jobs:
         working-directory: backend
         run: |
           $env:AICLASSROOM_DATA_DIR = "$env:RUNNER_TEMP\selftest"
-          .\dist\backend\aiclassroom-backend.exe --selftest --require-audio
+          .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword
           if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
 
       - name: Colocar el sidecar para Tauri
@@ -158,6 +158,11 @@ jobs:
         working-directory: src-tauri
         run: cargo build --release
 
+      # Fetched here, on a machine with a working connection, so the classroom
+      # PC never has to download anything (D-04).
+      - name: Descargar los modelos base de openWakeWord
+        run: python scripts\fetch_wakeword_runtime.py --output release\AI-Classroom-Live\data\models
+
       - name: Montar la carpeta portable
         run: |
           $staging = "release\AI-Classroom-Live"
@@ -173,10 +178,11 @@ jobs:
 
       # Runs the packaged backend from inside the portable layout, which is the
       # only place the data folder resolves the way the teacher will see it.
+      # Also needs openWakeWord: the download script imports it.
       - name: Comprobar la carpeta portable
         run: |
           $backend = "release\AI-Classroom-Live\runtime\backend\aiclassroom-backend.exe"
-          $output = & $backend --selftest --require-audio
+          $output = & $backend --selftest --require-audio --require-wakeword
           if ($LASTEXITCODE -ne 0) { throw "La carpeta portable no supera el autotest." }
           Write-Host $output
           $report = $output | ConvertFrom-Json
@@ -185,6 +191,15 @@ jobs:
             throw "El backend usa $($report.data_dir) en lugar de $expected."
           }
           if (-not $report.frozen) { throw "El ejecutable no está empaquetado." }
+
+          foreach ($model in @("melspectrogram.onnx", "embedding_model.onnx")) {
+            $path = "release\AI-Classroom-Live\data\models\openwakeword\$model"
+            if (-not (Test-Path $path)) { throw "Falta el modelo base $model." }
+          }
+
+          $size = (Get-ChildItem "release\AI-Classroom-Live" -Recurse -File |
+                   Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host ("Tamano de la carpeta portable: {0:N0} MB" -f $size)
 
       - uses: actions/upload-artifact@v4
         with:

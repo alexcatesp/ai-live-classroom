@@ -34,6 +34,7 @@ try {
     if (-not (Test-Path ".venv")) { python -m venv .venv }
     & .\.venv\Scripts\python.exe -m pip install --upgrade pip --quiet
     & .\.venv\Scripts\python.exe -m pip install -e ".[dev,wakeword]" pyinstaller --quiet
+    $env:PATH = "$PWD\.venv\Scripts;$env:PATH"
 
     if (-not $SkipTests) {
         Write-Host "== 2/6 Backend: tests ==" -ForegroundColor Cyan
@@ -44,6 +45,9 @@ try {
     Write-Host "== 3/6 Backend: empaquetado con PyInstaller ==" -ForegroundColor Cyan
     & .\.venv\Scripts\python.exe -m PyInstaller aiclassroom-backend.spec --noconfirm --clean
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller ha fallado." }
+
+    & .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword
+    if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
 }
 finally { Pop-Location }
 
@@ -92,6 +96,14 @@ Copy-Item (Join-Path $root "backend\dist\backend") $runtime -Recurse
 foreach ($folder in @("config", "materials", "sessions", "metrics", "models")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $staging "data\$folder") | Out-Null
 }
+
+# Fetched on this machine so the classroom PC never downloads anything (D-04).
+Push-Location $root
+try {
+    python scripts\fetch_wakeword_runtime.py --output (Join-Path $staging "data\models")
+    if ($LASTEXITCODE -ne 0) { throw "No se pudieron descargar los modelos de openWakeWord." }
+}
+finally { Pop-Location }
 
 Copy-Item (Join-Path $root "docs\README-portable.txt") (Join-Path $staging "README.txt") -Force
 

@@ -76,11 +76,20 @@ def test_a_missing_wake_word_model_blocks_the_class(paths):
     assert "train_wakeword" in result.remedy
 
 
-def test_a_present_wake_word_model_passes(paths):
-    (paths.models_dir / "oye_chat.onnx").write_bytes(b"x" * 2048)
-    result = check_wakeword_model(paths.models_dir, "Oye Chat")
+def test_a_complete_set_of_wake_word_models_passes(wakeword_models):
+    result = check_wakeword_model(wakeword_models, "Oye Chat")
     assert result.status is CheckStatus.OK
     assert "Oye Chat" in result.detail
+
+
+def test_a_missing_feature_extractor_blocks_the_class(paths):
+    """Without the base models openWakeWord would try to download mid-class."""
+    (paths.models_dir / "oye_chat.onnx").write_bytes(b"x" * 2048)
+
+    result = check_wakeword_model(paths.models_dir, "Oye Chat")
+    assert result.status is CheckStatus.FAILED
+    assert "melspectrogram.onnx" in result.detail
+    assert "fetch_wakeword_runtime" in result.remedy
 
 
 # -- network --------------------------------------------------------------
@@ -263,10 +272,11 @@ async def test_every_check_appears_in_the_report_even_when_skipped(offline_runne
     }
 
 
-async def test_a_warning_alone_still_allows_the_class_to_start(offline_runner, store, paths):
+async def test_a_warning_alone_still_allows_the_class_to_start(
+    offline_runner, store, wakeword_models
+):
     """Spec section 4.2 blocks on failures; a warning is information."""
     store.set_api_key("sk-test")
-    (paths.models_dir / "oye_chat.onnx").write_bytes(b"x" * 1024)
     runner = offline_runner(
         handshake=HandshakeResult(HandshakeStatus.BLOCKED, "Límite alcanzado")
     )

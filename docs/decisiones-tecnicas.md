@@ -223,7 +223,42 @@ el binario empaquetado: un build sin PortAudio falla ahí y no en el aula. Cero
 dispositivos es una respuesta válida (el runner no tiene tarjeta de sonido);
 una biblioteca ausente, no.
 
-### P-4 — Tauri no compila sin el sidecar
+### P-4 — openWakeWord descargaba sus modelos en tiempo de ejecución
+
+El detector necesita dos modelos compartidos además del de la frase: un
+extractor de melspectrogramas y el modelo de *embeddings* de voz. openWakeWord
+los descarga la primera vez que se ejecuta, lo que en un PC del instituto
+significaría una descarga segundos antes de la clase, en una red que
+probablemente la bloquee.
+
+Resuelto descargándolos en la máquina de construcción
+(`scripts/fetch_wakeword_runtime.py`) y pasándole al detector sus rutas de
+forma explícita, de modo que la biblioteca no toca la red. El diagnóstico
+comprueba que están presentes, y el CI verifica que viajan en la carpeta
+portable.
+
+La descarga arrastra además las palabras de activación preentrenadas en inglés
+("alexa", "hey jarvis", "timer") y las copias en tflite, unos 17 MB que esta
+aplicación nunca carga. El script las descarta: 19 MB pasan a 2,4 MB.
+
+### P-5 — El tamaño de la carpeta portable
+
+`openwakeword/__init__.py` importa su módulo de verificadores personalizados sin
+condición alguna, y ese módulo requiere scipy y scikit-learn. Aunque la
+aplicación nunca usa un verificador, ambos acaban en el paquete: con
+onnxruntime y numpy suman la mayor parte de los **~204 MB** que ocupa el backend
+empaquetado (medido en Linux; en Windows el orden de magnitud es el mismo).
+
+Se ha recortado lo que sí es seguro quitar: el motor de TensorFlow Lite (el
+detector usa ONNX por D-04) y todo el aparato de entrenamiento, que solo se
+utiliza en la máquina de construcción. Reducir los 204 MB restantes exigiría
+parchear openWakeWord, y no se ha hecho.
+
+Esto alimenta el riesgo R-4: cuando en la Fase 2 entre el modelo de embeddings
+local (D-08), la carpeta crecerá todavía más. Conviene medir el tiempo de copia
+a un USB antes de darla por buena. El CI imprime el tamaño en cada build.
+
+### P-6 — Tauri no compila sin el sidecar
 
 `tauri::generate_context!` exige que exista `binaries/aiclassroom-backend-<triple>`,
 de modo que el shell no se puede compilar sin haber empaquetado antes el
@@ -239,7 +274,7 @@ clippy; el de Windows es el que compila contra el backend real.
 | R-1 | Falsos positivos de "Oye Chat" con ruido de aula y varias voces | Sin medir (D-04) |
 | R-2 | Latencia del turno oral con WebSocket en lugar de WebRTC | Sin medir (D-06) |
 | R-3 | Filtrado de WebSocket o inspección TLS en la red del instituto | Lo comprueba el diagnóstico (D-03) |
-| R-4 | Peso de la carpeta portable con el modelo de embeddings | A vigilar (D-08) |
+| R-4 | Peso de la carpeta portable: ~204 MB ya en Fase 0, antes del modelo de embeddings | Medido, a vigilar (P-5, D-08) |
 | R-5 | Reintroducir la clave al mover la carpeta entre equipos | Aceptado (D-07) |
 | R-6 | Ausencia de cancelación de eco al reproducir y escuchar a la vez | Pendiente de Fase 1 (D-05) |
 | R-7 | Un antivirus del centro puede bloquear un ejecutable sin firmar | Sin comprobar en equipos reales |

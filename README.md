@@ -57,7 +57,7 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 149 tests
+.venv/bin/python -m pytest -q          # 153 tests, 1 omitido
 .venv/bin/python -m ruff check src tests
 
 # Frontend
@@ -102,15 +102,31 @@ El trabajo de Windows no se limita a compilar: ejecuta el backend empaquetado
 con `--selftest --require-audio`, de modo que un build sin PortAudio —una
 aplicación incapaz de abrir el micrófono— falla en el CI y no en el aula.
 
-### El modelo de la palabra de activación
+### Los modelos de la palabra de activación
 
-No está en el repositorio: se genera una vez y se copia a `data\models\`.
+Ninguno está en el repositorio. Hacen falta dos cosas en `data\models\`:
+
+**1. El extractor de características de openWakeWord** (común a cualquier
+frase). Lo descarga la construcción portable automáticamente, pero puedes
+hacerlo a mano:
+
+```bash
+python scripts/fetch_wakeword_runtime.py --output data/models
+```
+
+Se descargan en la máquina de construcción a propósito: así el equipo del aula
+no depende de la red para arrancar el detector.
+
+**2. El modelo de la frase «Oye Chat»**, que se entrena una vez:
 
 ```bash
 python -m venv .venv-train
 .venv-train/bin/pip install "openwakeword[training]"
 python scripts/train_wakeword.py --phrase "Oye Chat" --output data/models
 ```
+
+El entrenamiento arrastra torch y un modelo de síntesis de voz, así que vive
+fuera de la aplicación y fuera del CI.
 
 ## Estructura
 

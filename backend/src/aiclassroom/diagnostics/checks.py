@@ -18,7 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from ..audio.devices import DeviceInventory
-from ..audio.wakeword import model_filename
+from ..audio.wakeword import BASE_MODELS_SUBFOLDER, missing_base_models, model_filename
 from ..realtime.client import HandshakeStatus, RealtimeClient
 
 logger = logging.getLogger(__name__)
@@ -150,6 +150,23 @@ def check_wakeword_model(models_dir: Path, phrase: str) -> CheckResult:
             f"No se encontró el modelo para '{phrase}' en {path}.",
             "Genera el modelo con scripts/train_wakeword.py y colócalo en data/models.",
         )
+
+    # The phrase model alone is not enough: without the shared feature
+    # extractor the detector cannot start, and openWakeWord would otherwise try
+    # to download it in the middle of a class.
+    missing = missing_base_models(models_dir)
+    if missing:
+        names = ", ".join(item.name for item in missing)
+        return CheckResult(
+            "wakeword_model",
+            label,
+            CheckStatus.FAILED,
+            f"Faltan los modelos base de openWakeWord ({names}) en "
+            f"data/models/{BASE_MODELS_SUBFOLDER}.",
+            "Descárgalos con scripts/fetch_wakeword_runtime.py desde un equipo con conexión "
+            "y copia la carpeta a data/models.",
+        )
+
     size_mb = path.stat().st_size / (1024 * 1024)
     return CheckResult(
         "wakeword_model",

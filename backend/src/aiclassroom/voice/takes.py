@@ -19,7 +19,14 @@ TAKE_SECONDS = 3.0
 # Levels are on the 0..1 scale of the microphone meter (-60..0 dBFS).
 MIN_PEAK_LEVEL = 0.3  # about -42 dBFS: below this nobody was speaking into it
 MIN_CONTRAST = 0.15  # about 9 dB of speech over the room
-MIN_SPEECH_SECONDS = 0.3
+# Two frames. Enough to reject a click or a tap on the desk, and short enough
+# for a one-syllable word: "Chat" spoken normally is about a quarter of a
+# second, and a 0.3 s minimum forced a teacher to say "Chat, chat" instead.
+MIN_SPEECH_SECONDS = 0.16
+# Where speech starts and ends, as a fraction of the way from the room's level
+# to the peak. Low on purpose: the "ch" and the final "t" are quiet consonants,
+# and a higher bar trimmed them off and made short words look shorter still.
+SPEECH_EXTENT = 0.25
 MAX_SPEECH_SECONDS = 2.5
 MARGIN_SECONDS = 0.1
 
@@ -66,7 +73,7 @@ def analyse(recording: np.ndarray) -> Take:
             "tranquilo o más cerca del micrófono."
         )
 
-    speaking = np.flatnonzero(levels >= floor + 0.5 * (peak - floor))
+    speaking = np.flatnonzero(levels >= floor + SPEECH_EXTENT * (peak - floor))
     first, last = int(speaking[0]), int(speaking[-1])
 
     if last >= count - 1:

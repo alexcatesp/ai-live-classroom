@@ -66,7 +66,28 @@ def test_a_phrase_cut_off_at_the_end_is_rejected():
 
 def test_a_click_is_too_short_to_be_the_phrase():
     with pytest.raises(RecordingRejected, match="corto"):
-        analyse(recording(speech_seconds=0.1))
+        analyse(recording(speech_seconds=0.05))
+
+
+def test_a_one_syllable_word_is_long_enough():
+    """Reported in use: "Chat" alone was rejected, and only "Chat, chat" passed."""
+    take = analyse(recording(speech_seconds=0.25))
+    assert take.seconds >= 0.25
+
+
+def test_quiet_consonants_at_the_edges_are_kept():
+    """A soft onset and tail must not be trimmed off a short word."""
+    rng = np.random.default_rng(3)
+    samples = rng.normal(0, 0.001, int(TAKE_SECONDS * CAPTURE_SAMPLE_RATE))
+    start = int(1.0 * CAPTURE_SAMPLE_RATE)
+    # 80 ms of soft "ch", 160 ms of loud vowel, 80 ms of soft "t".
+    for offset, seconds, amplitude in ((0.0, 0.08, 0.04), (0.08, 0.16, 0.4), (0.24, 0.08, 0.04)):
+        begin = start + int(offset * CAPTURE_SAMPLE_RATE)
+        t = np.arange(int(seconds * CAPTURE_SAMPLE_RATE)) / CAPTURE_SAMPLE_RATE
+        samples[begin : begin + t.size] += amplitude * np.sin(2 * np.pi * 300 * t)
+    take = analyse((np.clip(samples, -1, 1) * 32767).astype(np.int16))
+    # The whole word plus the margins, not just the vowel.
+    assert take.seconds >= 0.3 + 0.2 - 0.08
 
 
 def test_talking_the_whole_time_is_too_long():

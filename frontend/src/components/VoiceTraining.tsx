@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 
 import type { BackendClient } from "../lib/api";
-import type { TakeKind, TakeSummary, VoiceStatus } from "../lib/types";
+import type { TakeKind, TakeSummary, VoiceStatus, VoiceTrainingResult } from "../lib/types";
 
 interface Props {
   client: BackendClient | null;
@@ -28,6 +28,111 @@ function describe(error: unknown): string {
 
 function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+interface ComparisonProps {
+  phrase: string;
+  result: VoiceTrainingResult;
+  busy: boolean;
+  onAccept: () => void;
+  onDiscard: () => void;
+}
+
+/**
+ * The tuned model beside the original, on the same audio. The teacher decides
+ * with both columns in front of them, and the safe choice is always the
+ * prominent button.
+ */
+function ComparisonResult({ phrase, result, busy, onAccept, onDiscard }: ComparisonProps) {
+  const { original, tuned } = result;
+  const rows: { label: string; original: string; tuned: string; better: boolean; worse: boolean }[] =
+    [
+      {
+        label: `Reconoce tu «${phrase}»`,
+        original: `${original.phrase_detected} de ${result.phrase_total}`,
+        tuned: `${tuned.phrase_detected} de ${result.phrase_total}`,
+        better: tuned.phrase_detected > original.phrase_detected,
+        worse: tuned.phrase_detected < original.phrase_detected,
+      },
+      {
+        label: "Se activa con frases parecidas",
+        original: `${original.near_misses_triggered} de ${result.near_misses_total}`,
+        tuned: `${tuned.near_misses_triggered} de ${result.near_misses_total}`,
+        better: tuned.near_misses_triggered < original.near_misses_triggered,
+        worse: tuned.near_misses_triggered > original.near_misses_triggered,
+      },
+      {
+        label: `Falsas activaciones con tu habla normal (${Math.round(
+          result.speech_held_out_seconds,
+        )} s reservados)`,
+        original: String(original.speech_activations),
+        tuned: String(tuned.speech_activations),
+        better: tuned.speech_activations < original.speech_activations,
+        worse: tuned.speech_activations > original.speech_activations,
+      },
+      {
+        label: "Errores con otras voces y frases",
+        original: `${(original.base_false_rate * 100).toFixed(2)}%`,
+        tuned: `${(tuned.base_false_rate * 100).toFixed(2)}%`,
+        better: tuned.base_false_rate < original.base_false_rate,
+        worse: tuned.base_false_rate > original.base_false_rate,
+      },
+    ];
+
+  return (
+    <div className="training-result" role="status">
+      <p className={result.recommended ? "summary-ok" : "summary-failed"}>{result.verdict}</p>
+      <div className="table-scroll">
+        <table className="comparison">
+          <thead>
+            <tr>
+              <th scope="col" />
+              <th scope="col">Original</th>
+              <th scope="col">Ajustado a tu voz</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                <td>{row.original}</td>
+                <td className={row.better ? "cell-better" : row.worse ? "cell-worse" : undefined}>
+                  {row.tuned}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">
+        Tus frases y las parecidas también se usaron para ajustar, así que esas filas favorecen al
+        modelo nuevo. El final de tu habla normal no lo vio ninguno de los dos. Los ejemplos de
+        otras voces sí los vio el original al entrenarse, así que esa fila le favorece a él. El
+        cambio se aplica la próxima vez que inicies la clase.
+      </p>
+      <div className="controls">
+        {result.recommended ? (
+          <>
+            <button type="button" className="primary" disabled={busy} onClick={onAccept}>
+              Usar este modelo
+            </button>
+            <button type="button" className="secondary" disabled={busy} onClick={onDiscard}>
+              Descartar
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="primary" disabled={busy} onClick={onDiscard}>
+              Descartar y seguir con el original
+            </button>
+            <button type="button" className="secondary" disabled={busy} onClick={onAccept}>
+              Usarlo de todos modos
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function VoiceTraining({ client, classListening }: Props) {
@@ -92,7 +197,8 @@ export function VoiceTraining({ client, classListening }: Props) {
   const allRecorded =
     status !== null &&
     phraseDone === status.phrase_takes.length &&
-    nearMissDone === status.near_miss_takes.length;
+    nearMissDone === status.near_miss_takes.length &&
+    status.speech_take !== null;
   const canRecord =
     !classListening && !training && recording === null && status?.state !== "ready";
 
@@ -116,7 +222,7 @@ export function VoiceTraining({ client, classListening }: Props) {
         {isRecording && status && (
           <span
             className="take-timer"
-            style={{ animationDuration: `${status.take_seconds}s` }}
+            style={{ animationDuration: `${status.take_seconds[kind]}s` }}
             aria-hidden="true"
           />
         )}
@@ -182,10 +288,12 @@ export function VoiceTraining({ client, classListening }: Props) {
             ) : (
               <>
                 <p className="muted small">
-                  Graba cinco veces «{status.phrase}» y una vez cada frase parecida. Al pulsar
-                  «Grabar» tienes {status.take_seconds} segundos: di la frase en seguida y con tu
-                  tono normal. Las grabaciones solo existen en la memoria de este equipo, no salen
-                  de él y se borran en cuanto termina el entrenamiento.
+                  Ajusta el detector original a tu voz y a tu micrófono. Graba cinco veces «
+                  {status.phrase}», una vez cada frase parecida y medio minuto hablando con
+                  normalidad. Al pulsar «Grabar» una frase tienes {status.take_seconds.phrase}{" "}
+                  segundos: dila en seguida y con tu tono normal. Las grabaciones solo existen en
+                  la memoria de este equipo, no salen de él y se borran en cuanto termina el
+                  entrenamiento.
                 </p>
 
                 {classListening && (
@@ -216,6 +324,16 @@ export function VoiceTraining({ client, classListening }: Props) {
                       take,
                     ),
                   )}
+                </ol>
+
+                <h3>Hablando con normalidad ({status.speech_take ? 1 : 0} de 1)</h3>
+                <p className="muted small">
+                  Explica algo durante {status.take_seconds.speech} segundos, como en clase, sin
+                  decir «{status.phrase}». Sirve para que tu voz normal no active el detector, y
+                  el final se reserva para comparar el modelo nuevo con el original.
+                </p>
+                <ol className="takes">
+                  {renderTake("speech", 0, "Medio minuto hablando", status.speech_take)}
                 </ol>
 
                 {status.state === "idle" && (
@@ -249,47 +367,13 @@ export function VoiceTraining({ client, classListening }: Props) {
                 )}
 
                 {status.state === "ready" && status.result && (
-                  <div className="training-result" role="status">
-                    <p className="summary-ok">Modelo nuevo entrenado.</p>
-                    <ul>
-                      <li>
-                        Reconoce {status.result.phrase_detected} de {status.result.phrase_total}{" "}
-                        de tus «{status.phrase}».
-                      </li>
-                      <li>
-                        Se activa con {status.result.near_misses_triggered} de{" "}
-                        {status.result.near_misses_total} frases parecidas.
-                      </li>
-                      <li>
-                        Con ejemplos que no vio al entrenar: detecta el{" "}
-                        {percent(status.result.held_out_detection)} y se equivoca en el{" "}
-                        {(status.result.held_out_false_rate * 100).toFixed(2)}%.
-                      </li>
-                    </ul>
-                    <p className="muted small">
-                      Tus grabaciones también se usaron para entrenar, así que las dos primeras
-                      cifras son optimistas. La prueba de verdad es usarlo en clase. El cambio se
-                      aplica la próxima vez que inicies la clase.
-                    </p>
-                    <div className="controls">
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => client && void act(() => client.acceptVoiceModel())}
-                      >
-                        Usar este modelo
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy}
-                        onClick={() => client && void act(() => client.discardVoiceModel())}
-                      >
-                        Descartar
-                      </button>
-                    </div>
-                  </div>
+                  <ComparisonResult
+                    phrase={status.phrase}
+                    result={status.result}
+                    busy={busy}
+                    onAccept={() => client && void act(() => client.acceptVoiceModel())}
+                    onDiscard={() => client && void act(() => client.discardVoiceModel())}
+                  />
                 )}
 
                 {status.state === "failed" && (

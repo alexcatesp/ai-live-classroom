@@ -107,20 +107,30 @@ export interface ListeningStatus {
   speech_probability: number | null;
 }
 
-export type TakeKind = "phrase" | "near_miss";
+export type TakeKind = "phrase" | "near_miss" | "speech";
 
 export interface TakeSummary {
   seconds: number;
   level: number;
 }
 
-export interface VoiceTrainingResult {
+/** One model measured on the same audio as the other. */
+export interface ModelScore {
   phrase_detected: number;
-  phrase_total: number;
   near_misses_triggered: number;
+  speech_activations: number;
+  base_detection: number;
+  base_false_rate: number;
+}
+
+export interface VoiceTrainingResult {
+  original: ModelScore;
+  tuned: ModelScore;
+  phrase_total: number;
   near_misses_total: number;
-  held_out_detection: number;
-  held_out_false_rate: number;
+  speech_held_out_seconds: number;
+  recommended: boolean;
+  verdict: string;
   seconds: number;
 }
 
@@ -129,7 +139,8 @@ export interface VoiceStatus {
   near_miss_prompts: string[];
   phrase_takes: (TakeSummary | null)[];
   near_miss_takes: (TakeSummary | null)[];
-  take_seconds: number;
+  speech_take: TakeSummary | null;
+  take_seconds: Record<TakeKind, number>;
   recording: boolean;
   state: "idle" | "training" | "ready" | "failed";
   progress: number;

@@ -222,10 +222,14 @@ confusión que estaba cometiendo.
   `aiclassroom.voice.training`, y el script lo importa.
 - El CI guarda el corpus sintético ya convertido en ventanas
   (`data/models/oye_chat.corpus.npz`, float16, unos 30 MB) junto al modelo.
-- En el aula se cargan esas ventanas, se añaden las de las grabaciones del
-  profesor multiplicadas por aumentado (40 copias de cada una, y la mitad de las
-  frases precedidas por una de sus frases parecidas, para reconocerla en mitad
-  de una oración) y se reentrena el clasificador.
+- En el aula **no se entrena desde cero: se hace fine-tuning del modelo
+  original** (ver P-14). Se leen sus pesos del `.onnx` y se sigue entrenando
+  12 pasadas con un ritmo de aprendizaje bajo (3·10⁻⁴). Se mezclan las
+  grabaciones del profesor, aumentadas 24 veces cada una y la mitad de las
+  frases precedidas por una de sus frases parecidas, con el doble de ejemplos
+  del corpus sintético para que no olvide lo que ya sabía.
+- Además de la frase y las parecidas se graban **30 segundos de habla normal**,
+  que se usan como negativos.
 - scikit-learn ya viajaba en el paquete (P-5); se añade `onnx`. El autotest
   `--require-training` entrena y exporta un modelo mínimo con el ejecutable ya
   empaquetado, para que un paquete sin esas piezas falle en el CI y no delante
@@ -240,16 +244,29 @@ decidió así:
 - No salen del equipo; nada de este módulo usa la red.
 - El panel lo explica antes de pulsar el primer botón.
 
-**Seguridad del cambio.** El modelo nuevo no sustituye a nada hasta que el
-profesor pulsa «Usar este modelo», tras ver cuántas de sus tomas reconoce y con
-cuántas frases parecidas se sigue activando. Se guarda en
-`data/models/personal/`, y el modelo original nunca se sobrescribe: «Volver al
-modelo original» borra un archivo. El diagnóstico dice cuál de los dos se usa.
+**Seguridad del cambio.** Antes de ofrecer el modelo ajustado se **compara con
+el original sobre el mismo audio**:
+
+- sus frases y frases parecidas;
+- el último 35 % del habla normal, que no se usa para ajustar;
+- un 15 % del corpus sintético apartado antes de ajustar.
+
+Solo se recomienda si no empeora en falsas activaciones con el habla normal, en
+errores con otras voces ni en detección de la frase, y si mejora en algo
+medible. Si no se recomienda, el botón principal es «Descartar y seguir con el
+original».
+
+El modelo aceptado se guarda en `data/models/personal/`, y el original nunca se
+sobrescribe: «Volver al modelo original» borra un archivo. El diagnóstico dice
+cuál de los dos se usa.
 
 **Límites conocidos.**
 
-- Las cifras que ve el profesor son optimistas: sus grabaciones también se
-  usaron para entrenar. La medida de verdad sigue siendo
+- La comparación no es del todo neutral, pero cada sesgo tira hacia el lado
+  seguro. Las filas de frase y frases parecidas favorecen al modelo nuevo,
+  porque se ajustó con ellas. El corpus apartado favorece al original, que se
+  entrenó con él. Solo el habla reservada es nueva para los dos, y es la
+  primera condición que se exige. La medida de verdad sigue siendo
   `scripts/measure_wakeword.py` sobre una clase grabada (R-1).
 - Entrenado con una voz, reconocerá mejor esa voz. La spec prevé que también
   invoquen al asistente los alumnos, así que conviene grabar varias voces si se
@@ -500,6 +517,38 @@ Fase 0 el controlador lo lanza a los 2 s, para que la interfaz alcance a
 mostrar el estado; en Fase 1 será el tiempo de espera de quien dice la frase y
 luego nada. El temporizador no toma el cerrojo del controlador, porque se arma
 desde el hilo de audio y `stop()` espera a ese hilo con el cerrojo tomado.
+
+### P-14 — El modelo entrenado con la voz daba más falsos positivos que el original
+
+La primera versión de D-12 entrenaba el clasificador **desde cero** con el
+corpus sintético más las grabaciones del profesor. En uso, el profesor notó más
+falsas activaciones que con el modelo original. Tres causas probables:
+
+1. **Entrenar de cero tiraba lo que el original hacía bien.** Con diez
+   grabaciones reales, cualquier desequilibrio del conjunto pesaba mucho en una
+   red nueva.
+2. **Sesgo de micrófono y sala.** Todo el audio real del entrenamiento eran
+   enunciados cortos por el mismo micrófono, sin un segundo del profesor
+   hablando con normalidad. «Voz corta con este micrófono» podía empezar a
+   parecerse a la frase.
+3. **Nada comparaba el modelo nuevo con el original.** Se aceptaba a ciegas,
+   con cifras medidas sobre las propias grabaciones de entrenamiento.
+
+Resuelto atacando las tres:
+
+1. **Fine-tuning** a partir de los pesos del original, con reproducción del
+   corpus sintético. Se verificó que el modelo reconstruido desde el `.onnx`
+   puntúa exactamente igual que el original, diferencia 0,0.
+2. **Medio minuto de habla normal** como negativos.
+3. **Comparación con el original** sobre audio apartado, y recomendación solo
+   si no empeora.
+
+Probado con el corpus y el modelo reales del CI: el ajuste completo tarda unos
+35 s en el PC de desarrollo y mantiene la tasa de error del original sobre el
+corpus apartado. No se pudo probar con voz humana real fuera del aula.
+
+También en esta ronda: «Chat» sola se rechazaba por corta. El mínimo de 0,3 s
+era más largo que la palabra, y el recorte se comía la «ch» y la «t».
 
 ## Verificado en Windows real
 

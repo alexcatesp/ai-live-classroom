@@ -64,7 +64,7 @@ frontend solo recibe estados y texto.
 | Sesión Realtime | **Una sesión caliente por clase**, abierta al pulsar «Iniciar clase», con reconexión automática | Abrir una por pregunta suma ~1,7 s de red medidos (R-2). Hay que verificar la duración máxima de una sesión y reconectar antes de que expire |
 | Qué audio sale | Solo desde la activación hasta el fin de turno | spec §14 y §16: nada durante la escucha pasiva |
 | Inicio de la pregunta | Búfer circular local de ~1,5 s; se envía desde el final de «Oye Chat» | La gente dice «Oye Chat, ¿qué…?» sin pausa; sin búfer se pierde el principio |
-| Fin de turno | VAD del servidor (`server_vad` o `semantic_vad`), con `create_response: true` e `interrupt_response: false` | La interrupción la decide la aplicación, no cualquier ruido del aula |
+| Fin de turno | **Automático, ~2 s después de dejar de oír voz** (configurable). VAD del servidor con `silence_duration_ms` ≈ 2000, `create_response: true` e `interrupt_response: false` | Decidido con el profesor: aula de FP de grado superior, tranquila y con micrófono direccional. Dos segundos toleran una pausa para pensar a cambio de sumarlos a la espera de la respuesta |
 | Silencio tras «Oye Chat» | Si en ~5 s no empieza una pregunta, `ACTIVATION_EXPIRED` (ya existe, P-13) | Una activación sin pregunta no debe dejar el micrófono enviando |
 | Formato | PCM 16 bits, 24 kHz, mono, en ambos sentidos | Formato nativo de la API; el detector sigue a 16 kHz |
 | Transcripción | Activar la transcripción de la entrada en la sesión | Necesaria para el panel (D-11) |
@@ -124,7 +124,8 @@ audio fuera de la ventana activación → fin de turno.
 - Disparadores:
   - «Oye Chat» durante *Pensando* o *Hablando*. El listener ya lo detecta y
     lanza `INTERRUPT`, con la guarda de eco.
-  - Botón **Parar** en la interfaz.
+  - Botón **Parar**, de emergencia: visible solo mientras el asistente piensa o
+    habla. «Pausar» también corta la respuesta que esté sonando.
 - Acciones: detener la reproducción al instante, `response.cancel`,
   `conversation.item.truncate` con los milisegundos realmente reproducidos
   (así el modelo no «cree» que dijo lo que nadie oyó), y volver a escuchar o
@@ -180,11 +181,11 @@ relevantes» (§21).
 
 Conviene cerrarlas antes de empezar el hito donde aparecen.
 
-**1. Qué interrumpe una respuesta (H4).**
-Recomendado: solo «Oye Chat» y el botón «Parar». La alternativa es que
-cualquier voz interrumpa (`interrupt_response` del servidor), que es lo natural
-en una conversación de dos pero en un aula cortaría la respuesta con cada
-murmullo. La spec §6.2 dice «nueva intervención» sin concretar.
+**1. Qué interrumpe una respuesta (H4). — Decidido.**
+«Oye Chat» y un botón «Parar» de emergencia; «Pausar» también corta. La
+pregunta termina sola unos 2 s después de dejar de oír voz. Si en el aula
+resulta demasiado lento o corta preguntas, el silencio se ajusta en la
+configuración.
 
 **2. Cómo usar los materiales antes del RAG (H6).**
 El criterio de §21 exige usarlos en el MVP, pero el RAG es de la Fase 2.
@@ -219,7 +220,7 @@ del centro.
 |---|---|
 | Latencia total del turno demasiado alta en el aula (R-2) | Sesión caliente, preroll local y medida del primer audio desde H3. Si no basta, WebRTC con token efímero (D-06) |
 | El asistente se oye a sí mismo al hablar (R-6) | Guarda de eco ya existente, micrófono no enviado durante *Hablando* e interrupción solo por «Oye Chat» |
-| El VAD del servidor corta preguntas con pausas para pensar | Probar `semantic_vad` frente a `server_vad` y ajustar el silencio mínimo |
+| El fin de turno automático corta preguntas con pausas para pensar, o tarda demasiado | 2 s de silencio de partida, configurable; medir en el aula y comparar `server_vad` con `semantic_vad` |
 | Sesiones que expiran en mitad de la clase | Reconexión transparente antes de expirar; la conversación previa no es crítica en Fase 1 |
 | Coste descontrolado | Tope por respuesta, límite por sesión y registro del consumo desde H7 |
 | Inspección TLS en el centro (R-3, R-8) | Ya detectada en el diagnóstico; el cliente en streaming reutiliza la misma verificación |

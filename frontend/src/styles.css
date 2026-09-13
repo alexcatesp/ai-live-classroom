@@ -263,6 +263,28 @@ body {
 
 .voice-content > .primary { margin-top: 16px; }
 
+.table-scroll { overflow-x: auto; }
+
+.comparison {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 0.9rem;
+}
+
+.comparison th,
+.comparison td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.comparison thead th { color: var(--muted); font-weight: 600; }
+.comparison tbody th { font-weight: 400; }
+.comparison td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cell-better { color: var(--tone-listening); font-weight: 600; }
+.cell-worse { color: var(--tone-danger); font-weight: 600; }
+
 .state-controls {
   margin-top: 16px;
   padding-top: 16px;
@@ -300,12 +322,6 @@ body {
 .state-label {
   font-size: 1.25rem;
   font-weight: 600;
-}
-
-.state-code {
-  font-family: ui-monospace, "Cascadia Mono", monospace;
-  font-size: 0.75rem;
-  opacity: 0.8;
 }
 
 .state-description {

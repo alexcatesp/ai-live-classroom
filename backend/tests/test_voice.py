@@ -8,7 +8,7 @@ import pytest
 from aiclassroom.audio.devices import CAPTURE_SAMPLE_RATE, FRAME_SAMPLES
 from aiclassroom.audio.engine import FakeAudioEngine
 from aiclassroom.audio.wakeword import model_filename, personal_model_path, phrase_model_path
-from aiclassroom.voice.personal import PersonalResult
+from aiclassroom.voice.personal import ModelScore, PersonalResult, judge
 from aiclassroom.voice.session import (
     NEAR_MISS_PROMPTS,
     PHRASE_TAKES,
@@ -95,6 +95,58 @@ def test_talking_the_whole_time_is_too_long():
         analyse(recording(speech_from=0.1, speech_seconds=2.7))
 
 
+def test_half_a_minute_of_talking_is_accepted_whole():
+    from aiclassroom.voice.takes import SPEECH_TAKE_SECONDS, analyse_speech
+
+    take = analyse_speech(talking(SPEECH_TAKE_SECONDS))
+    assert take.seconds == pytest.approx(SPEECH_TAKE_SECONDS)
+
+
+def test_a_speech_take_with_barely_any_talking_is_rejected():
+    from aiclassroom.voice.takes import SPEECH_TAKE_SECONDS, analyse_speech
+
+    with pytest.raises(RecordingRejected, match="Apenas has hablado"):
+        analyse_speech(recording(speech_seconds=2.0, total=SPEECH_TAKE_SECONDS))
+
+
+def test_a_silent_speech_take_is_rejected():
+    from aiclassroom.voice.takes import SPEECH_TAKE_SECONDS, analyse_speech
+
+    with pytest.raises(RecordingRejected, match="Acércate"):
+        analyse_speech(recording(amplitude=0.0, total=SPEECH_TAKE_SECONDS))
+
+
+# -- the judgement: a tuned model must earn its place ------------------------
+
+
+def test_a_model_that_wakes_more_on_ordinary_speech_is_not_recommended():
+    """The complaint that led to fine-tuning: the new model woke up more."""
+    original = ModelScore(3, 2, 0, 0.95, 0.002)
+    tuned = ModelScore(5, 0, 2, 0.96, 0.001)
+    recommended, verdict = judge(original, tuned, 5)
+    assert recommended is False
+    assert "habla normal" in verdict
+
+
+def test_a_model_worse_on_other_voices_is_not_recommended():
+    original = ModelScore(3, 2, 1, 0.95, 0.002)
+    tuned = ModelScore(5, 0, 0, 0.96, 0.02)
+    assert judge(original, tuned, 5)[0] is False
+
+
+def test_a_model_that_hears_the_teacher_better_without_side_effects_is_recommended():
+    original = ModelScore(2, 3, 1, 0.95, 0.002)
+    tuned = ModelScore(5, 0, 0, 0.95, 0.002)
+    recommended, verdict = judge(original, tuned, 5)
+    assert recommended is True
+    assert "5 de 5" in verdict
+
+
+def test_a_model_that_changes_nothing_is_not_worth_it():
+    same = ModelScore(4, 1, 0, 0.95, 0.002)
+    assert judge(same, same, 5)[0] is False
+
+
 # -- capture through the engine --------------------------------------------
 
 
@@ -125,9 +177,23 @@ class Recorder:
     def __init__(self) -> None:
         self.calls = 0
 
-    def __call__(self, _settings, _seconds):
+    def __call__(self, _settings, seconds):
         self.calls += 1
+        if seconds > 5:
+            return talking(seconds)
         return recording()
+
+
+def talking(seconds: float) -> np.ndarray:
+    """Ordinary speech: words of about 0.4 s with short gaps between them."""
+    rng = np.random.default_rng(2)
+    samples = rng.normal(0, 0.001, int(seconds * CAPTURE_SAMPLE_RATE))
+    word = int(0.4 * CAPTURE_SAMPLE_RATE)
+    gap = int(0.2 * CAPTURE_SAMPLE_RATE)
+    t = np.arange(word) / CAPTURE_SAMPLE_RATE
+    for start in range(int(0.5 * CAPTURE_SAMPLE_RATE), samples.size - word, word + gap):
+        samples[start : start + word] += 0.3 * np.sin(2 * np.pi * 200 * t)
+    return (np.clip(samples, -1, 1) * 32767).astype(np.int16)
 
 
 def fake_trainer(**kwargs) -> PersonalResult:
@@ -136,7 +202,9 @@ def fake_trainer(**kwargs) -> PersonalResult:
     destination.write_bytes(b"modelo nuevo")
     kwargs["progress"](0.5, "Entrenando")
     fake_trainer.last_call = kwargs
-    return PersonalResult(5, 5, 0, 5, 0.98, 0.001, 12.0)
+    original = ModelScore(2, 3, 4, 0.95, 0.002)
+    tuned = ModelScore(5, 0, 0, 0.96, 0.001)
+    return PersonalResult(original, tuned, 5, 5, 10.5, True, "Recomendado.", 12.0)
 
 
 @pytest.fixture
@@ -166,6 +234,7 @@ def record_everything(session: VoiceTrainingSession) -> None:
         session.record(Kind.PHRASE, slot)
     for slot in range(len(NEAR_MISS_PROMPTS)):
         session.record(Kind.NEAR_MISS, slot)
+    session.record(Kind.SPEECH, 0)
 
 
 def test_takes_are_listed_as_they_are_recorded(session):
@@ -192,7 +261,7 @@ def test_the_microphone_is_not_taken_from_a_running_class(store, ready_models):
 
 def test_training_needs_every_take(session):
     session.record(Kind.PHRASE, 0)
-    with pytest.raises(VoiceNotReady, match="Faltan 9"):
+    with pytest.raises(VoiceNotReady, match="Faltan 10"):
         session.start_training()
 
 
@@ -206,6 +275,7 @@ def test_the_recordings_are_gone_once_training_ends(session):
     assert status["state"] == TrainingState.READY
     assert all(take is None for take in status["phrase_takes"])
     assert all(take is None for take in status["near_miss_takes"])
+    assert status["speech_take"] is None
 
 
 def test_the_recordings_are_gone_even_when_training_fails(store, ready_models, monkeypatch):
@@ -241,6 +311,7 @@ def test_the_trainer_gets_the_teachers_takes_and_the_current_threshold(session):
     call = fake_trainer.last_call
     assert len(call["phrase_takes"]) == PHRASE_TAKES
     assert len(call["near_miss_takes"]) == len(NEAR_MISS_PROMPTS)
+    assert len(call["speech_takes"]) == 1
     assert 0.0 < call["threshold"] < 1.0
 
 
@@ -298,7 +369,40 @@ def test_a_pending_model_from_an_unfinished_run_is_not_kept(store, ready_models)
 
 
 def test_training_is_unavailable_without_the_base_corpus(store, paths):
+    (paths.models_dir / model_filename("Oye Chat")).write_bytes(b"modelo original")
     session = VoiceTrainingSession(
         store=store, capture=Recorder(), microphone_in_use=lambda: False
     )
     assert "corpus" in session.status()["unavailable_reason"]
+
+
+# -- fine-tuning starts from the shipped weights ----------------------------
+
+
+def test_the_shipped_model_is_rebuilt_exactly_before_tuning(tmp_path):
+    """Fine-tuning is only fine-tuning if it starts from the original's weights."""
+    pytest.importorskip("onnx")
+    pytest.importorskip("onnxruntime")
+    sklearn = pytest.importorskip("sklearn.neural_network")
+    from aiclassroom.voice.training import export_onnx, load_classifier, score_windows
+
+    rng = np.random.default_rng(0)
+    features = rng.normal(size=(80, 16 * 96))
+    labels = np.array([0, 1] * 40)
+    trained = sklearn.MLPClassifier(hidden_layer_sizes=(8, 4), max_iter=20, random_state=0)
+    trained.fit(features, labels)
+    original = export_onnx(trained, tmp_path / "original.onnx")
+
+    rebuilt = load_classifier(original)
+    windows = rng.normal(size=(20, 16, 96)).astype(np.float32)
+    again = export_onnx(rebuilt, tmp_path / "again.onnx")
+
+    assert np.array_equal(score_windows(original, windows), score_windows(again, windows))
+
+
+def test_activations_are_counted_like_the_detector_counts_them():
+    from aiclassroom.voice.training import count_activations
+
+    scores = np.array([0.1, 0.9, 0.1, 0.9, 0.9, 0.9, 0.2, 0.8, 0.8])
+    # A lone spike does not fire; a run fires once however long it lasts.
+    assert count_activations(scores, threshold=0.5, confirmation=2) == 2

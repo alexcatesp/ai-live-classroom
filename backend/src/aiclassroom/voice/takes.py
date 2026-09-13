@@ -31,6 +31,13 @@ MAX_SPEECH_SECONDS = 2.5
 MARGIN_SECONDS = 0.1
 
 
+# Ordinary speech, recorded once, so the detector learns that this voice through
+# this microphone is not enough on its own to be the phrase (D-12).
+SPEECH_TAKE_SECONDS = 30.0
+# Of that half minute, the share of frames that must be speech.
+MIN_SPEECH_SHARE = 0.3
+
+
 class RecordingRejected(ValueError):
     """The take cannot be used, and the message says why."""
 
@@ -45,6 +52,31 @@ class Take:
     @property
     def seconds(self) -> float:
         return self.samples.size / CAPTURE_SAMPLE_RATE
+
+
+def analyse_speech(recording: np.ndarray) -> Take:
+    """Check a half minute of ordinary talk. Nothing is trimmed: it is all used."""
+    samples = np.asarray(recording, dtype=np.int16).ravel()
+    count = samples.size // FRAME_SAMPLES
+    if count < 3:
+        raise RecordingRejected("La grabación está vacía. Vuelve a intentarlo.")
+
+    frames = samples[: count * FRAME_SAMPLES].reshape(count, FRAME_SAMPLES)
+    levels = np.array([frame_level(frame) for frame in frames])
+    peak = float(np.percentile(levels, 95))
+    floor = float(np.percentile(levels, 5))
+    if peak < MIN_PEAK_LEVEL:
+        raise RecordingRejected(
+            "Apenas se oye nada. Acércate al micrófono o comprueba en Configuración "
+            "que está elegido el correcto."
+        )
+    share = float(np.mean(levels >= floor + SPEECH_EXTENT * (peak - floor)))
+    if peak - floor < MIN_CONTRAST or share < MIN_SPEECH_SHARE:
+        raise RecordingRejected(
+            "Apenas has hablado. Explica algo en voz alta durante todo el tiempo, "
+            "como lo harías en clase."
+        )
+    return Take(samples=samples.astype(np.float32) / 32768.0, peak_level=peak)
 
 
 def analyse(recording: np.ndarray) -> Take:

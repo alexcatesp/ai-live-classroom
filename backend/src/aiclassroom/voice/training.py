@@ -455,6 +455,118 @@ def verify(path: Path) -> None:
         raise InvalidModel(f"El modelo devuelve {score}, que no es una probabilidad.")
 
 
+# -- fine-tuning -----------------------------------------------------------
+
+
+class UnsupportedModel(RuntimeError):
+    """The model on disk is not a graph this module wrote."""
+
+
+def load_classifier(path: Path, seed: int = 0):
+    """Rebuild the scikit-learn classifier from a model `export_onnx` wrote.
+
+    This is what makes fine-tuning possible: the shipped model is the
+    classifier's weights in a Reshape -> (Gemm -> Relu)* -> Gemm -> Sigmoid
+    graph, so reading the Gemm initialisers back gives the network as it was
+    trained, ready to keep learning from where it left off.
+    """
+    import onnx
+    from onnx import numpy_helper
+    from sklearn.neural_network import MLPClassifier
+
+    model = onnx.load(str(path))
+    initialisers = {
+        tensor.name: numpy_helper.to_array(tensor) for tensor in model.graph.initializer
+    }
+    gemms = [node for node in model.graph.node if node.op_type == "Gemm"]
+    if not gemms or model.graph.node[-1].op_type != "Sigmoid":
+        raise UnsupportedModel(f"{path.name} no es un modelo exportado por esta aplicación.")
+
+    coefs, intercepts = [], []
+    for node in gemms:
+        _, weight_name, bias_name = node.input
+        coefs.append(initialisers[weight_name].astype(np.float64))
+        intercepts.append(initialisers[bias_name].astype(np.float64))
+    if coefs[0].shape[0] != WINDOW_FRAMES * EMBEDDING_DIMS or coefs[-1].shape[1] != 1:
+        raise UnsupportedModel(f"{path.name} no tiene la forma que espera el detector.")
+
+    classifier = MLPClassifier(
+        hidden_layer_sizes=tuple(weights.shape[1] for weights in coefs[:-1]),
+        activation="relu",
+        alpha=1e-2,
+        batch_size=256,
+        random_state=seed,
+    )
+    # One tiny incremental step builds every internal structure scikit-learn
+    # needs (label binariser, output activation, layer bookkeeping); the
+    # weights it produced are then replaced in place by the loaded ones.
+    import warnings
+
+    probe = np.zeros((2, WINDOW_FRAMES * EMBEDDING_DIMS))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # "batch_size larger than sample size"
+        classifier.partial_fit(probe, np.array([0, 1]), classes=np.array([0, 1]))
+    for target, source in zip(classifier.coefs_, coefs, strict=True):
+        if target.shape != source.shape:
+            raise UnsupportedModel(f"{path.name}: capa {target.shape} frente a {source.shape}.")
+        target[...] = source
+    for target, source in zip(classifier.intercepts_, intercepts, strict=True):
+        target[...] = source
+    # The optimiser from that probe step holds momentum from junk gradients;
+    # dropping it makes the first real step start clean.
+    if hasattr(classifier, "_optimizer"):
+        del classifier._optimizer
+    return classifier
+
+
+def fine_tune(
+    classifier,
+    features_matrix: np.ndarray,
+    labels: np.ndarray,
+    epochs: int,
+    learning_rate: float,
+    seed: int,
+    on_epoch: Callable[[int], None] | None = None,
+):
+    """Keep training an existing classifier, gently.
+
+    A low learning rate and a handful of passes move the network towards the
+    new examples without walking away from what it already does well. The
+    caller is responsible for mixing in examples of the old task, or it will
+    forget it.
+    """
+    classifier.set_params(learning_rate_init=learning_rate)
+    flat = features_matrix.reshape(features_matrix.shape[0], -1)
+    rng = np.random.default_rng(seed)
+    for epoch in range(1, epochs + 1):
+        order = rng.permutation(flat.shape[0])
+        classifier.partial_fit(flat[order], labels[order])
+        if on_epoch:
+            on_epoch(epoch)
+    return classifier
+
+
+def count_activations(scores: np.ndarray, threshold: float, confirmation: int = 2) -> int:
+    """How many times a stream of window scores would wake the assistant.
+
+    Mirrors the detector: `confirmation` consecutive windows above the
+    threshold fire once, and the run has to break before it can fire again.
+    """
+    activations = 0
+    run = 0
+    fired = False
+    for score in scores:
+        if score >= threshold:
+            run += 1
+            if run >= confirmation and not fired:
+                activations += 1
+                fired = True
+        else:
+            run = 0
+            fired = False
+    return activations
+
+
 def score_windows(path: Path, windows: np.ndarray) -> np.ndarray:
     """Scores the written model gives each window, one at a time as in class."""
     import onnxruntime as ort

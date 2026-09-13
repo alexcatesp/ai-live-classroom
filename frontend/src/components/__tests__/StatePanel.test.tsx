@@ -14,10 +14,10 @@ function snapshot(state: SessionState, microphone: boolean): StateSnapshot {
 }
 
 describe("StatePanel", () => {
-  it("shows the state in Spanish and its technical code", () => {
+  it("shows the state in Spanish only", () => {
     render(<StatePanel snapshot={snapshot("PASSIVE_LISTENING", true)} connected />);
     expect(screen.getByText("Escucha pasiva")).toBeInTheDocument();
-    expect(screen.getByText("PASSIVE_LISTENING")).toBeInTheDocument();
+    expect(screen.queryByText("PASSIVE_LISTENING")).not.toBeInTheDocument();
   });
 
   it("announces an open microphone", () => {

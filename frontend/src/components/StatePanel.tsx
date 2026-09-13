@@ -25,9 +25,10 @@ export function StatePanel({ snapshot, connected, children }: Props) {
 
   return (
     <section className="panel state-panel" aria-label="Estado de la sesión">
-      <div className={`state-badge tone-${presentation.tone}`}>
+      {/* The technical code stays out of sight: the teacher reads Spanish, and
+          anyone debugging finds it in data-state. */}
+      <div className={`state-badge tone-${presentation.tone}`} data-state={snapshot.state}>
         <span className="state-label">{presentation.label}</span>
-        <span className="state-code">{snapshot.state}</span>
       </div>
       <p className="state-description">{presentation.description}</p>
 

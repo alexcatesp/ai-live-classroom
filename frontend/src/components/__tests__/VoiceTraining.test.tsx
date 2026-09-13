@@ -14,7 +14,8 @@ function voice(overrides: Partial<VoiceStatus> = {}): VoiceStatus {
     near_miss_prompts: ["Oye chico", "Oye Chechu", "Oye cat", "Oye, ¿qué tal?", "Chat"],
     phrase_takes: [null, null, null, null, null],
     near_miss_takes: [null, null, null, null, null],
-    take_seconds: 3,
+    speech_take: null,
+    take_seconds: { phrase: 3, near_miss: 3, speech: 30 },
     recording: false,
     state: "idle",
     progress: 0,
@@ -87,10 +88,30 @@ describe("VoiceTraining", () => {
     expect(screen.getByRole("button", { name: "Entrenar" })).toBeDisabled();
   });
 
+  it("pide también medio minuto hablando con normalidad", async () => {
+    const client = fakeClient(voice());
+    await open(client);
+    await userEvent.click(screen.getByRole("button", { name: "Grabar: Medio minuto hablando" }));
+    expect(client.recordTake).toHaveBeenCalledWith("speech", 0);
+  });
+
+  it("no deja entrenar sin el medio minuto de habla", async () => {
+    await open(
+      fakeClient(
+        voice({
+          phrase_takes: [take, take, take, take, take],
+          near_miss_takes: [take, take, take, take, take],
+        }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Entrenar" })).toBeDisabled();
+  });
+
   it("entrena cuando está todo grabado", async () => {
     const all = voice({
       phrase_takes: [take, take, take, take, take],
       near_miss_takes: [take, take, take, take, take],
+      speech_take: { seconds: 30, level: 0.6 },
     });
     const client = fakeClient(all);
     await open(client);
@@ -109,27 +130,52 @@ describe("VoiceTraining", () => {
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
   });
 
-  it("presenta el resultado y deja usar o descartar el modelo", async () => {
-    const client = fakeClient(
-      voice({
-        state: "ready",
-        result: {
-          phrase_detected: 5,
-          phrase_total: 5,
-          near_misses_triggered: 1,
-          near_misses_total: 5,
-          held_out_detection: 0.97,
-          held_out_false_rate: 0.002,
-          seconds: 80,
-        },
-      }),
-    );
-    await open(client);
-    expect(screen.getByText(/Reconoce 5 de 5/)).toBeInTheDocument();
-    expect(screen.getByText(/Se activa con 1 de 5/)).toBeInTheDocument();
+  const comparison = (recommended: boolean) => ({
+    original: {
+      phrase_detected: 2,
+      near_misses_triggered: 3,
+      speech_activations: 1,
+      base_detection: 0.95,
+      base_false_rate: 0.002,
+    },
+    tuned: {
+      phrase_detected: 5,
+      near_misses_triggered: 0,
+      speech_activations: recommended ? 0 : 3,
+      base_detection: 0.96,
+      base_false_rate: 0.001,
+    },
+    phrase_total: 5,
+    near_misses_total: 5,
+    speech_held_out_seconds: 10.5,
+    recommended,
+    verdict: recommended ? "Recomendado: reconoce tu frase 5 de 5 veces." : "No se recomienda.",
+    seconds: 40,
+  });
 
+  it("compara el modelo ajustado con el original, fila a fila", async () => {
+    await open(fakeClient(voice({ state: "ready", result: comparison(true) })));
+    const row = screen.getByRole("rowheader", { name: /Reconoce tu «Oye Chat»/ }).closest("tr")!;
+    expect(row).toHaveTextContent("2 de 5");
+    expect(row).toHaveTextContent("5 de 5");
+    expect(screen.getByText(/Recomendado/)).toBeInTheDocument();
+  });
+
+  it("si lo recomienda, lo principal es usarlo", async () => {
+    const client = fakeClient(voice({ state: "ready", result: comparison(true) }));
+    await open(client);
     await userEvent.click(screen.getByRole("button", { name: "Usar este modelo" }));
     await waitFor(() => expect(client.acceptVoiceModel).toHaveBeenCalledOnce());
+  });
+
+  it("si no lo recomienda, lo principal es quedarse con el original", async () => {
+    const client = fakeClient(voice({ state: "ready", result: comparison(false) }));
+    await open(client);
+    expect(screen.queryByRole("button", { name: "Usar este modelo" })).not.toBeInTheDocument();
+    const keep = screen.getByRole("button", { name: "Descartar y seguir con el original" });
+    expect(keep).toHaveClass("primary");
+    await userEvent.click(keep);
+    await waitFor(() => expect(client.discardVoiceModel).toHaveBeenCalledOnce());
   });
 
   it("permite volver al modelo original", async () => {

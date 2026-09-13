@@ -35,7 +35,7 @@ from ..audio.wakeword import (
 from ..config.settings import Settings
 from ..config.store import SettingsStore
 from .personal import PersonalResult, train_personal, training_available
-from .takes import TAKE_SECONDS, Take, analyse
+from .takes import SPEECH_TAKE_SECONDS, TAKE_SECONDS, Take, analyse, analyse_speech
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,15 @@ Capture = Callable[[Settings, float], np.ndarray]
 class Kind(StrEnum):
     PHRASE = "phrase"
     NEAR_MISS = "near_miss"
+    #: Half a minute of ordinary talk, without the phrase.
+    SPEECH = "speech"
+
+
+TAKE_LENGTH = {
+    Kind.PHRASE: TAKE_SECONDS,
+    Kind.NEAR_MISS: TAKE_SECONDS,
+    Kind.SPEECH: SPEECH_TAKE_SECONDS,
+}
 
 
 class TrainingState(StrEnum):
@@ -154,6 +163,7 @@ class VoiceTrainingSession:
         self._takes = {
             Kind.PHRASE: [None] * PHRASE_TAKES,
             Kind.NEAR_MISS: [None] * len(NEAR_MISS_PROMPTS),
+            Kind.SPEECH: [None],
         }
 
     def _slot(self, kind: Kind, slot: int) -> None:
@@ -174,8 +184,8 @@ class VoiceTrainingSession:
                 )
             self._recording = True
         try:
-            recording = self._capture(self.store.load(), TAKE_SECONDS)
-            take = analyse(recording)
+            recording = self._capture(self.store.load(), TAKE_LENGTH[kind])
+            take = analyse_speech(recording) if kind is Kind.SPEECH else analyse(recording)
         finally:
             with self._lock:
                 self._recording = False
@@ -201,28 +211,30 @@ class VoiceTrainingSession:
             if reason:
                 raise VoiceNotReady(reason)
 
-            phrase_takes = [take.samples for take in self._takes[Kind.PHRASE] if take]
-            near_miss_takes = [take.samples for take in self._takes[Kind.NEAR_MISS] if take]
+            takes = {
+                kind: [take.samples for take in self._takes[kind] if take] for kind in Kind
+            }
             settings = self.store.load()
             self.state = TrainingState.TRAINING
             self.progress, self.message, self.error, self.result = 0.0, "Empezando", None, None
             self._thread = threading.Thread(
                 target=self._run,
-                args=(settings, phrase_takes, near_miss_takes),
+                args=(settings, takes),
                 name="voice-training",
                 daemon=True,
             )
             self._thread.start()
 
-    def _run(self, settings: Settings, phrase_takes, near_miss_takes) -> None:
+    def _run(self, settings: Settings, takes: dict[Kind, list[np.ndarray]]) -> None:
         destination = self._pending_model()
         shutil.rmtree(self._pending_dir, ignore_errors=True)
         try:
             result = self._trainer(
                 models_dir=self._models_dir,
                 phrase=settings.wake_phrase,
-                phrase_takes=phrase_takes,
-                near_miss_takes=near_miss_takes,
+                phrase_takes=takes[Kind.PHRASE],
+                near_miss_takes=takes[Kind.NEAR_MISS],
+                speech_takes=takes[Kind.SPEECH],
                 destination=destination,
                 threshold=threshold_for(settings.wake_sensitivity),
                 progress=self._report,
@@ -243,7 +255,7 @@ class VoiceTrainingSession:
             # held by this thread go with the frame.
             with self._lock:
                 self._clear_takes()
-            del phrase_takes, near_miss_takes
+            takes.clear()
 
     def _report(self, fraction: float, message: str) -> None:
         with self._lock:
@@ -302,7 +314,8 @@ class VoiceTrainingSession:
                 "near_miss_prompts": list(NEAR_MISS_PROMPTS),
                 "phrase_takes": describe(self._takes[Kind.PHRASE]),
                 "near_miss_takes": describe(self._takes[Kind.NEAR_MISS]),
-                "take_seconds": TAKE_SECONDS,
+                "speech_take": describe(self._takes[Kind.SPEECH])[0],
+                "take_seconds": {kind.value: seconds for kind, seconds in TAKE_LENGTH.items()},
                 "recording": self._recording,
                 "state": self.state.value,
                 "progress": self.progress,

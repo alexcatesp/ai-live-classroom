@@ -89,10 +89,13 @@ desde la propia aplicación:
 
 1. Con la clase pausada o sin empezar, abre **Entrenar con mi voz** en el panel
    de la palabra de activación.
-2. Graba cinco veces «Oye Chat» y una vez cada frase parecida que se ofrece. Al
-   pulsar **Grabar** tienes tres segundos; si la toma no vale, te dice por qué.
-3. Pulsa **Entrenar** (uno o dos minutos) y, si el resultado te convence,
-   **Usar este modelo**. Se aplica al iniciar la siguiente clase.
+2. Graba cinco veces «Oye Chat», una vez cada frase parecida que se ofrece y
+   medio minuto hablando con normalidad. Al pulsar **Grabar** una frase tienes
+   tres segundos; si la toma no vale, te dice por qué.
+3. Pulsa **Entrenar**, que ajusta el modelo original a tu voz en menos de un
+   minuto. Verás el modelo ajustado frente al original sobre el mismo audio, con
+   una recomendación. Si te convence, pulsa **Usar este modelo**; se aplica al
+   iniciar la siguiente clase.
 
 Las grabaciones solo existen en memoria y se borran al terminar el
 entrenamiento. **Volver al modelo original** deshace el cambio (D-12).
@@ -149,13 +152,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 284 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 295 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 107 tests
+npm run test                            # 111 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

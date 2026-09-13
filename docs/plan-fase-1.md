@@ -289,6 +289,20 @@ Pedido por el profesor tras ver el coste de las pruebas de H3.
 **Terminado cuando** una clase real responde desde el PC de casa a través de
 Tailscale y se mide la latencia hasta la primera palabra.
 
+**Probado de principio a fin en el PC de casa (14/09/2026)** con speaches,
+`qwen3.8-aula` y Kokoro reales: 1,8 s desde el final de la pregunta hasta el
+primer audio con todo cargado, 5,6 s si Whisper está frío; 15,1 GB de VRAM.
+Detalle en `servidor-local.md`.
+
+Pendiente, decidido con el profesor:
+
+- **Calentar los tres servicios al arrancar la app** y al cambiar a modo local:
+  una generación real de Qwen (cargar el modelo no basta: el primer prompt tardó
+  dos minutos más), medio segundo de silencio a Whisper y una palabra a Kokoro.
+  Qwen se mantiene cargado mientras la app esté abierta.
+- **Idioma y voz de Kokoro** en Configuración, con voces de español de España
+  (`ef_dora`, `em_alex`, `em_santa`), en el hito de personalidad (H5).
+
 ### H5 — Personalidad y panel de transcripción
 
 - Prompt base de spec §13 como instrucciones de sesión, en un archivo editable
@@ -351,9 +365,29 @@ pregunta termina sola unos 2 s después de dejar de oír voz. Si en el aula
 resulta demasiado lento o corta preguntas, el silencio se ajusta en la
 configuración.
 
-**2. Cómo usar los materiales antes del RAG (H6).**
-El criterio de §21 exige usarlos en el MVP, pero el RAG es de la Fase 2.
-Opciones:
+**2. Cómo usar los materiales antes del RAG (H6). — Decidido (14/09/2026).**
+
+- **Recuperación, no contexto directo.** Los materiales de una sola unidad (UT01
+  de IADW: apuntes, ejercicios y prácticas) suman unas 36.000 palabras, ≈ 50.000
+  tokens. En la nube costarían ≈ 0,20 $ por pregunta cada vez que la caché
+  caduque, y en el servidor local no caben en los 8.192 tokens de Qwen.
+- **Markdown como fuente**, no PDF ni transparencias: texto exacto y
+  encabezados que dan fragmentos con título y CE. Los PDF del alumnado se
+  generan de los mismos Markdown.
+- **Qué se ingiere:** apuntes, ejercicios (sus soluciones ya se reparten),
+  prácticas y la guía del curso. **Nunca** exámenes, banco de ítems ni rúbricas,
+  ni documentos del profesor ni las fuentes originales.
+- **Primero BM25 local**, fragmentado por encabezados, **medido** con el banco de
+  ítems del examen como conjunto de evaluación: cada ítem está etiquetado con su
+  CE, igual que las secciones de los apuntes. El banco solo se usa para medir.
+  Si BM25 acierta poco, embeddings locales.
+- **En la nube, materiales desactivados por defecto** y, al activarlos, un aviso
+  bien visible con el coste estimado por pregunta. El profesor usará el servidor
+  local, y la nube sin materiales si no alcanza su PC desde el instituto.
+- **Se conserva la conversación:** las repreguntas caben en el contexto y la
+  recuperación usa también la pregunta anterior.
+
+Opciones que se consideraron:
 
 - **a) Contexto directo** (recomendado para empezar): si el texto de la sesión
   cabe en un presupuesto de tokens, va en las instrucciones de la sesión. Es

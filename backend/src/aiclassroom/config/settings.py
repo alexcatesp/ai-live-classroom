@@ -20,6 +20,18 @@ DEFAULT_VOICE = "marin"
 OPENAI_HOST = "api.openai.com"
 
 
+class ReasoningEffort(StrEnum):
+    """How much a reasoning-capable Realtime model thinks before answering.
+
+    The API has no "off": minimal is the least, and the cheapest and fastest.
+    """
+
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class TranscriptRetention(StrEnum):
     """Spec section 14: transcripts are only kept if the teacher asks for it."""
 
@@ -33,6 +45,9 @@ class Settings(BaseModel):
     lives encrypted in its own field of the settings file (see SettingsStore)."""
 
     realtime_model: str = DEFAULT_REALTIME_MODEL
+    # Classroom questions need no deliberation, and reasoning is billed as
+    # text output and adds latency. Sent only to models that reason.
+    reasoning_effort: ReasoningEffort = ReasoningEffort.MINIMAL
     voice: str = DEFAULT_VOICE
 
     input_device: str | None = None

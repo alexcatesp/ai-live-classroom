@@ -44,6 +44,8 @@ class SessionConfig:
     #: ...down to this fraction of the limit, all at once, so the cache is
     #: missed once every few questions rather than on every one.
     history_retention_ratio: float = 0.5
+    #: For models that reason (gpt-realtime-2 onwards); None sends nothing.
+    reasoning_effort: str | None = "minimal"
 
 
 def config_from_settings(settings: Any, instructions: str) -> SessionConfig:
@@ -56,7 +58,16 @@ def config_from_settings(settings: Any, instructions: str) -> SessionConfig:
         silence_ms=settings.turn_silence_ms,
         noise_reduction=settings.realtime_noise_reduction or None,
         history_max_tokens=settings.history_max_tokens,
+        reasoning_effort=str(settings.reasoning_effort),
     )
+
+
+# Earlier models reject a reasoning field they do not have.
+REASONING_MODEL_PREFIX = "gpt-realtime-2"
+
+
+def reasons(model: str) -> bool:
+    return model.startswith(REASONING_MODEL_PREFIX)
 
 
 def session_update(config: SessionConfig) -> dict[str, Any]:
@@ -66,7 +77,7 @@ def session_update(config: SessionConfig) -> dict[str, Any]:
         else None
     )
     noise_reduction = {"type": config.noise_reduction} if config.noise_reduction else None
-    return {
+    update = {
         "type": "session.update",
         "session": {
             "type": "realtime",
@@ -107,6 +118,9 @@ def session_update(config: SessionConfig) -> dict[str, Any]:
             },
         },
     }
+    if config.reasoning_effort and reasons(config.model):
+        update["session"]["reasoning"] = {"effort": config.reasoning_effort}
+    return update
 
 
 # -- client events -----------------------------------------------------------

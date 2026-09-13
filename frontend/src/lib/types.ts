@@ -51,6 +51,7 @@ export interface DiagnosticsReport {
 
 export interface Settings {
   realtime_model: string;
+  reasoning_effort: string;
   voice: string;
   input_device: string | null;
   output_device: string | null;

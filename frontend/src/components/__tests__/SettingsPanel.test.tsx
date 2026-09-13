@@ -7,6 +7,7 @@ import type { DeviceInventory, Settings, SettingsResponse } from "../../lib/type
 
 const SETTINGS: Settings = {
   realtime_model: "gpt-realtime-2",
+  reasoning_effort: "minimal",
   voice: "marin",
   input_device: null,
   output_device: null,

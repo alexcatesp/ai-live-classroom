@@ -217,6 +217,15 @@ async def test_truncation_says_how_much_was_actually_heard():
             await session.stop()
 
 
+def test_reasoning_is_kept_to_the_minimum_on_models_that_reason():
+    from dataclasses import replace
+
+    reasoning = replace(CONFIG, model="gpt-realtime-2")
+    assert events.session_update(reasoning)["session"]["reasoning"] == {"effort": "minimal"}
+    # An earlier model would refuse the whole configuration over it.
+    assert "reasoning" not in events.session_update(CONFIG)["session"]
+
+
 def test_the_history_is_truncated_in_large_steps_by_the_server():
     """The re-read conversation is cheap only from the prompt cache (spec 16)."""
     truncation = events.session_update(CONFIG)["session"]["truncation"]

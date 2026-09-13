@@ -317,8 +317,11 @@ límite:
   `gpt-realtime-2`, porque ese valor era el predeterminado y no una elección.
   El archivo lleva desde ahora `settings_version`, y un modelo elegido después
   se respeta.
-- `gpt-realtime-2` razona con esfuerzo «low» por defecto. No se cambia: más
-  esfuerzo sube la latencia y los tokens de salida.
+- `gpt-realtime-2` razona con esfuerzo «low» por defecto. La API no permite
+  apagarlo, así que se envía `reasoning.effort: "minimal"`, el mínimo
+  (`reasoning_effort` en la configuración). Las preguntas de clase no necesitan
+  deliberar, y el razonamiento se cobra como texto de salida y añade latencia.
+  Los modelos anteriores no lo reciben, porque rechazarían la configuración.
 - Lo más caro sigue siendo la voz de la respuesta. Acortarla es H5.
 
 ---

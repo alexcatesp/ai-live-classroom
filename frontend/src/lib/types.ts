@@ -107,6 +107,39 @@ export interface ListeningStatus {
   speech_probability: number | null;
 }
 
+export type TakeKind = "phrase" | "near_miss";
+
+export interface TakeSummary {
+  seconds: number;
+  level: number;
+}
+
+export interface VoiceTrainingResult {
+  phrase_detected: number;
+  phrase_total: number;
+  near_misses_triggered: number;
+  near_misses_total: number;
+  held_out_detection: number;
+  held_out_false_rate: number;
+  seconds: number;
+}
+
+export interface VoiceStatus {
+  phrase: string;
+  near_miss_prompts: string[];
+  phrase_takes: (TakeSummary | null)[];
+  near_miss_takes: (TakeSummary | null)[];
+  take_seconds: number;
+  recording: boolean;
+  state: "idle" | "training" | "ready" | "failed";
+  progress: number;
+  message: string;
+  error: string | null;
+  result: VoiceTrainingResult | null;
+  personal_model: boolean;
+  unavailable_reason: string | null;
+}
+
 export type BackendEvent =
   | { type: "state"; payload: Transition | StateSnapshot }
   | { type: "wakeword"; payload: { phrase: string; score: number; at: string } };

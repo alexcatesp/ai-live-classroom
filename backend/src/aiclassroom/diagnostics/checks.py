@@ -18,7 +18,12 @@ from enum import StrEnum
 from pathlib import Path
 
 from ..audio.devices import DeviceInventory
-from ..audio.wakeword import BASE_MODELS_SUBFOLDER, missing_base_models, model_filename
+from ..audio.wakeword import (
+    BASE_MODELS_SUBFOLDER,
+    missing_base_models,
+    personal_model_path,
+    phrase_model_path,
+)
 from ..realtime.client import (
     NETWORK_WARNING_SECONDS,
     SESSION_WARNING_SECONDS,
@@ -154,7 +159,8 @@ def check_speakers(inventory: DeviceInventory, configured: str | None = None) ->
 
 def check_wakeword_model(models_dir: Path, phrase: str) -> CheckResult:
     label = "Modelo de activación"
-    path = models_dir / model_filename(phrase)
+    path = phrase_model_path(models_dir, phrase)
+    personal = path == personal_model_path(models_dir, phrase)
     if not path.exists():
         return CheckResult(
             "wakeword_model",
@@ -185,7 +191,8 @@ def check_wakeword_model(models_dir: Path, phrase: str) -> CheckResult:
         "wakeword_model",
         label,
         CheckStatus.OK,
-        f"Modelo para '{phrase}' cargado ({size_mb:.1f} MB).",
+        f"Modelo para '{phrase}' "
+        f"{'entrenado con tu voz' if personal else 'original'} ({size_mb:.1f} MB).",
     )
 
 

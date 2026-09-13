@@ -82,8 +82,18 @@ sin tarjeta de sonido.
 
 El artefacto incluye el detector ya entrenado. **Reconoce voces sintéticas**,
 que es con lo que se entrena en el CI: sirve para comprobar que todo funciona,
-no para fiarse de él en clase. Antes de usarlo de verdad, reentrénalo con
-grabaciones de personas reales (ver más abajo).
+no para fiarse de él en clase. Antes de usarlo de verdad, entrénalo con tu voz
+desde la propia aplicación:
+
+1. Con la clase pausada o sin empezar, abre **Entrenar con mi voz** en el panel
+   de la palabra de activación.
+2. Graba cinco veces «Oye Chat» y una vez cada frase parecida que se ofrece. Al
+   pulsar **Grabar** tienes tres segundos; si la toma no vale, te dice por qué.
+3. Pulsa **Entrenar** (uno o dos minutos) y, si el resultado te convence,
+   **Usar este modelo**. Se aplica al iniciar la siguiente clase.
+
+Las grabaciones solo existen en memoria y se borran al terminar el
+entrenamiento. **Volver al modelo original** deshace el cambio (D-12).
 
 En esta fase el asistente **no responde todavía**: se activa, se queda dos
 segundos en *Activado* y vuelve a la escucha pasiva, listo para la siguiente
@@ -137,13 +147,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 258 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 284 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 95 tests
+npm run test                            # 107 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

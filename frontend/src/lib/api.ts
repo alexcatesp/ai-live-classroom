@@ -13,6 +13,8 @@ import type {
   Settings,
   SettingsResponse,
   StateSnapshot,
+  TakeKind,
+  VoiceStatus,
 } from "./types";
 
 export interface BackendHandshake {
@@ -173,5 +175,36 @@ export class BackendClient {
 
   getLastDiagnostics(): Promise<DiagnosticsReport | null> {
     return this.request("/api/diagnostics/last");
+  }
+
+  // -- training with the teacher's voice (D-12) ---------------------------
+
+  getVoice(): Promise<VoiceStatus> {
+    return this.request("/api/voice");
+  }
+
+  /** Resolves once the take has been recorded, a few seconds later. */
+  recordTake(kind: TakeKind, slot: number): Promise<VoiceStatus> {
+    return this.request(`/api/voice/takes/${kind}/${slot}`, { method: "POST" });
+  }
+
+  forgetTake(kind: TakeKind, slot: number): Promise<VoiceStatus> {
+    return this.request(`/api/voice/takes/${kind}/${slot}`, { method: "DELETE" });
+  }
+
+  trainVoice(): Promise<VoiceStatus> {
+    return this.request("/api/voice/train", { method: "POST" });
+  }
+
+  acceptVoiceModel(): Promise<VoiceStatus> {
+    return this.request("/api/voice/accept", { method: "POST" });
+  }
+
+  discardVoiceModel(): Promise<VoiceStatus> {
+    return this.request("/api/voice/discard", { method: "POST" });
+  }
+
+  restoreOriginalModel(): Promise<VoiceStatus> {
+    return this.request("/api/voice/restore", { method: "POST" });
   }
 }

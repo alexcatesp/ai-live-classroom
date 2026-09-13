@@ -201,6 +201,63 @@ la respuesta, además del audio.
 
 ---
 
+## D-12 — Entrenar el detector con la voz del profesor, dentro de la aplicación
+
+**Decisión.** Un acordeón «Entrenar con mi voz», dentro del panel de la palabra
+de activación, graba **cinco veces «Oye Chat»** y **una vez cada frase
+parecida** («Oye chico», «Oye Chechu», «Oye cat», «Oye, ¿qué tal?», «Chat») y
+reentrena el detector en el propio equipo, en uno o dos minutos.
+
+**Motivo.** En la primera prueba real el modelo sintético se activaba «a veces»
+con la frase y también con «Oye Chechu», «Oye chico» y «Oye cat». Reentrenar con
+el script exige una máquina de construcción; el profesor tiene que poder
+hacerlo solo, en el aula y con su micrófono. Las frases parecidas se graban
+porque son justo los falsos positivos observados: enseñan al detector la
+confusión que estaba cometiendo.
+
+**Cómo, sin espeak-ng en el aula.**
+
+- El entrenamiento (aumentado, ventanas de *embeddings*, MLP con minería de
+  negativos difíciles y exportación a ONNX) pasa del script al paquete
+  `aiclassroom.voice.training`, y el script lo importa.
+- El CI guarda el corpus sintético ya convertido en ventanas
+  (`data/models/oye_chat.corpus.npz`, float16, unos 30 MB) junto al modelo.
+- En el aula se cargan esas ventanas, se añaden las de las grabaciones del
+  profesor multiplicadas por aumentado (40 copias de cada una, y la mitad de las
+  frases precedidas por una de sus frases parecidas, para reconocerla en mitad
+  de una oración) y se reentrena el clasificador.
+- scikit-learn ya viajaba en el paquete (P-5); se añade `onnx`. El autotest
+  `--require-training` entrena y exporta un modelo mínimo con el ejecutable ya
+  empaquetado, para que un paquete sin esas piezas falle en el CI y no delante
+  del profesor.
+
+**Privacidad (spec §14).** Es la única excepción a «no se guarda audio», y se
+decidió así:
+
+- Las grabaciones **solo existen en memoria**: nunca se escriben a disco.
+- **Se descartan al terminar el entrenamiento**, salga bien o mal. Reentrenar
+  significa volver a grabar.
+- No salen del equipo; nada de este módulo usa la red.
+- El panel lo explica antes de pulsar el primer botón.
+
+**Seguridad del cambio.** El modelo nuevo no sustituye a nada hasta que el
+profesor pulsa «Usar este modelo», tras ver cuántas de sus tomas reconoce y con
+cuántas frases parecidas se sigue activando. Se guarda en
+`data/models/personal/`, y el modelo original nunca se sobrescribe: «Volver al
+modelo original» borra un archivo. El diagnóstico dice cuál de los dos se usa.
+
+**Límites conocidos.**
+
+- Las cifras que ve el profesor son optimistas: sus grabaciones también se
+  usaron para entrenar. La medida de verdad sigue siendo
+  `scripts/measure_wakeword.py` sobre una clase grabada (R-1).
+- Entrenado con una voz, reconocerá mejor esa voz. La spec prevé que también
+  invoquen al asistente los alumnos, así que conviene grabar varias voces si se
+  quiere que respondan a todos.
+- No se puede grabar mientras la clase escucha: el micrófono está ocupado.
+
+---
+
 ## Decisiones heredadas de la spec (§23), sin discusión
 
 - Aplicación de escritorio para Windows, no aplicación web.

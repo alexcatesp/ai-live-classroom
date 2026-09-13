@@ -59,6 +59,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="con --selftest, falla si el motor de palabra clave no está empaquetado",
     )
+    parser.add_argument(
+        "--require-training",
+        action="store_true",
+        help="con --selftest, falla si no se puede entrenar el detector con la voz",
+    )
     return parser.parse_args(argv)
 
 
@@ -95,8 +100,40 @@ def wakeword_engine_available() -> tuple[bool, str]:
     return True, "openWakeWord disponible"
 
 
+def voice_training_available() -> tuple[bool, str]:
+    """Train, export and load a tiny classifier, the way "Entrenar con mi voz" does.
+
+    Training in the classroom (D-12) needs scikit-learn's MLP and the onnx
+    package, neither of which inference touches. A bundle that dropped either
+    would only fail when a teacher had already recorded ten takes.
+    """
+    import tempfile
+    from pathlib import Path
+
+    try:
+        import numpy as np
+        from sklearn.neural_network import MLPClassifier
+
+        from .voice.training import EMBEDDING_DIMS, WINDOW_FRAMES, export_onnx, verify
+
+        rng = np.random.default_rng(0)
+        features = rng.normal(size=(40, WINDOW_FRAMES * EMBEDDING_DIMS)).astype(np.float32)
+        labels = np.array([0, 1] * 20)
+        classifier = MLPClassifier(hidden_layer_sizes=(4,), max_iter=5, random_state=0)
+        classifier.fit(features, labels)
+        with tempfile.TemporaryDirectory() as scratch:
+            path = export_onnx(classifier, Path(scratch) / "probe.onnx")
+            verify(path)
+    except Exception as exc:  # noqa: BLE001 - any failure is the answer
+        return False, str(exc)
+    return True, "entrenamiento disponible"
+
+
 def selftest(
-    paths: DataPaths, require_audio: bool = False, require_wakeword: bool = False
+    paths: DataPaths,
+    require_audio: bool = False,
+    require_wakeword: bool = False,
+    require_training: bool = False,
 ) -> int:
     """Prove the frozen executable runs here, without opening any device.
 
@@ -148,9 +185,18 @@ def selftest(
               file=sys.stderr)
         return 1
 
+    training_ok, training_detail = (
+        voice_training_available() if require_training else (None, "no comprobado")
+    )
+    if require_training and not training_ok:
+        print(f"FALLO: el entrenamiento con la voz no está empaquetado: {training_detail}",
+              file=sys.stderr)
+        return 1
+
     print(
         json.dumps(
             {
+                "voice_training": training_ok,
                 "ok": True,
                 "version": health.json()["version"],
                 "state": payload["state"],
@@ -182,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
             paths,
             require_audio=arguments.require_audio,
             require_wakeword=arguments.require_wakeword,
+            require_training=arguments.require_training,
         )
 
     import uvicorn

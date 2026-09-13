@@ -5,6 +5,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatePanel } from "./components/StatePanel";
+import { VoiceTraining } from "./components/VoiceTraining";
 import { WakeWordMeter } from "./components/WakeWordMeter";
 import { BackendClient, readHandshake, readStartupProblem } from "./lib/api";
 import { useBackendConnection } from "./lib/useBackend";
@@ -278,7 +279,9 @@ export function App() {
         />
       </StatePanel>
 
-      <WakeWordMeter status={listening} />
+      <WakeWordMeter status={listening}>
+        <VoiceTraining client={client} classListening={Boolean(snapshot?.microphone_active)} />
+      </WakeWordMeter>
 
       <Modal title="Configuración" open={settingsOpen} onClose={closeSettings}>
         <SettingsPanel

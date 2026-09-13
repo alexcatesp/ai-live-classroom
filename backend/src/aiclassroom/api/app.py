@@ -20,12 +20,21 @@ from fastapi.responses import JSONResponse, Response
 
 from .. import __version__
 from ..audio.devices import probe_devices
+from ..audio.engine import AudioError
 from ..config.secrets import WrongPassphrase
 from ..config.settings import Settings
 from ..config.store import SettingsStore
 from ..diagnostics.runner import DiagnosticsReport, DiagnosticsRunner
 from ..session.controller import ClassNotReady, SessionController
 from ..session.state import Event, InvalidTransition
+from ..voice.session import (
+    Kind,
+    VoiceBusy,
+    VoiceNotReady,
+    VoiceTrainingSession,
+    capture_with_engine,
+)
+from ..voice.takes import RecordingRejected
 from .schemas import (
     ApiKeyIn,
     DevicesOut,
@@ -69,6 +78,18 @@ class AppContext:
     runner: DiagnosticsRunner
     token: str
     last_report: DiagnosticsReport | None = None
+    voice: VoiceTrainingSession = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.voice is None:
+            # Records through the controller's engine, so a take uses the same
+            # microphone as a class, and refuses while a class holds it.
+            controller = self.controller
+            self.voice = VoiceTrainingSession(
+                store=self.store,
+                capture=capture_with_engine(controller.engine_factory),
+                microphone_in_use=lambda: controller.machine.is_microphone_active,
+            )
 
 
 class EventHub:
@@ -301,6 +322,64 @@ def create_app(context: AppContext) -> FastAPI:
             return None
         return DiagnosticsOut.of(context.last_report)
 
+    # -- training with the teacher's voice (D-12) ---------------------------
+
+    def voice_kind(kind: str) -> Kind:
+        try:
+            return Kind(kind)
+        except ValueError:
+            raise HTTPException(
+                status_code=404, detail=f"Tipo de grabación desconocido: {kind}"
+            ) from None
+
+    def voice_call(action) -> dict:
+        try:
+            action()
+        except VoiceBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except VoiceNotReady as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return context.voice.status()
+
+    @app.get("/api/voice", dependencies=guarded)
+    async def voice_status() -> dict:
+        return context.voice.status()
+
+    @app.post("/api/voice/takes/{kind}/{slot}", dependencies=guarded)
+    async def record_take(kind: str, slot: int) -> dict:
+        chosen = voice_kind(kind)
+        try:
+            # Blocks for the length of the take, so it runs off the event loop.
+            await asyncio.to_thread(context.voice.record, chosen, slot)
+        except RecordingRejected as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (VoiceBusy, VoiceNotReady) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except AudioError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return context.voice.status()
+
+    @app.delete("/api/voice/takes/{kind}/{slot}", dependencies=guarded)
+    async def forget_take(kind: str, slot: int) -> dict:
+        chosen = voice_kind(kind)
+        return voice_call(lambda: context.voice.forget(chosen, slot))
+
+    @app.post("/api/voice/train", dependencies=guarded)
+    async def train_voice() -> dict:
+        return voice_call(context.voice.start_training)
+
+    @app.post("/api/voice/accept", dependencies=guarded)
+    async def accept_voice_model() -> dict:
+        return voice_call(context.voice.accept)
+
+    @app.post("/api/voice/discard", dependencies=guarded)
+    async def discard_voice_model() -> dict:
+        return voice_call(context.voice.discard)
+
+    @app.post("/api/voice/restore", dependencies=guarded)
+    async def restore_original_model() -> dict:
+        return voice_call(context.voice.restore_original)
+
     # -- events -----------------------------------------------------------
 
     @app.websocket("/ws/events")
@@ -333,6 +412,7 @@ def build_context(
     controller: SessionController | None = None,
     runner: DiagnosticsRunner | None = None,
     token: str | None = None,
+    voice: VoiceTrainingSession | None = None,
 ) -> AppContext:
     store = store or SettingsStore()
     controller = controller or SessionController(store)
@@ -341,5 +421,6 @@ def build_context(
         controller=controller,
         runner=runner or DiagnosticsRunner(store),
         token=token or secrets.token_urlsafe(32),
+        voice=voice,
     )
 

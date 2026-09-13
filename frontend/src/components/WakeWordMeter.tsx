@@ -6,6 +6,8 @@
  * guessed at a desk.
  */
 
+import type { ReactNode } from "react";
+
 import type { ListeningStatus } from "../lib/types";
 
 /** Matches DEFAULT_VAD_THRESHOLD in backend/src/aiclassroom/audio/wakeword.py. */
@@ -15,14 +17,17 @@ const SILENT_LEVEL = 0.05;
 
 interface Props {
   status: ListeningStatus | null;
+  /** Shown below the meter whether or not the class is listening. */
+  children?: ReactNode;
 }
 
-export function WakeWordMeter({ status }: Props) {
+export function WakeWordMeter({ status, children }: Props) {
   if (!status || !status.listening) {
     return (
       <section className="panel" aria-label="Palabra de activación">
         <h2>Palabra de activación</h2>
         <p className="muted">Disponible cuando la clase esté en escucha pasiva.</p>
+        {children}
       </section>
     );
   }
@@ -120,6 +125,7 @@ export function WakeWordMeter({ status }: Props) {
           <dd>{Math.round(status.seconds_listening)} s</dd>
         </div>
       </dl>
+      {children}
     </section>
   );
 }

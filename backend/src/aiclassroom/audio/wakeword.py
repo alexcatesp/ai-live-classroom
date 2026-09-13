@@ -307,9 +307,10 @@ class OpenWakeWordDetector:
         buffer = getattr(getattr(self._model, "vad", None), "prediction_buffer", None)
         if not buffer:
             return 0.0
-        # The buffer holds the last ~10 s; the recent max matches the meter's
-        # half-second window, so a short word is not lost between polls.
-        return float(max(list(buffer)[-7:]))
+        # The buffer holds the last ~10 s. A second of it holds the verdict
+        # through the gaps between words, which otherwise made the indicator
+        # flicker between "Voz detectada" and "Sin voz" mid-sentence.
+        return float(max(list(buffer)[-12:]))
 
     def reset(self) -> None:
         self._tracker.reset()
@@ -379,6 +380,21 @@ def model_filename(phrase: str) -> str:
     return f"{slug or 'wakeword'}.onnx"
 
 
+# A model trained with the teacher's voice (D-12) lives apart from the one that
+# ships, so going back to the original is deleting a file, not rebuilding.
+PERSONAL_SUBFOLDER = "personal"
+
+
+def personal_model_path(models_dir: Path, phrase: str) -> Path:
+    return models_dir / PERSONAL_SUBFOLDER / model_filename(phrase)
+
+
+def phrase_model_path(models_dir: Path, phrase: str) -> Path:
+    """The model the detector loads: the teacher's own if there is one."""
+    personal = personal_model_path(models_dir, phrase)
+    return personal if personal.exists() else models_dir / model_filename(phrase)
+
+
 def create_detector(
     models_dir: Path,
     phrase: str,
@@ -393,7 +409,7 @@ def create_detector(
     model is reported as the missing file it is rather than as whatever the
     library says when it is not installed.
     """
-    phrase_model = models_dir / model_filename(phrase)
+    phrase_model = phrase_model_path(models_dir, phrase)
     if not phrase_model.exists():
         raise WakeWordUnavailable(
             f"No se encontró el modelo de palabra clave en {phrase_model}. "
@@ -411,7 +427,7 @@ def create_detector(
 
     melspec, embedding, vad = base_model_paths(models_dir)
     return OpenWakeWordDetector(
-        model_path=models_dir / model_filename(phrase),
+        model_path=phrase_model,
         phrase=phrase,
         sensitivity=sensitivity,
         refractory_seconds=refractory_seconds,

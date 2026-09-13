@@ -96,6 +96,11 @@ class SessionController:
         self._lock = threading.RLock()
         self.detection_subscribers: list[Callable[[Detection], None]] = []
 
+    @property
+    def engine_factory(self) -> EngineFactory:
+        """Shared with voice training, so a take uses the same microphone as a class."""
+        return self._engine_factory
+
     def _default_detector(self, settings: Settings) -> WakeWordDetector:
         return create_detector(
             models_dir=self.store.paths.models_dir,

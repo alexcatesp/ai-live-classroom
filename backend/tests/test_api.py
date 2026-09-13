@@ -417,3 +417,37 @@ def test_an_empty_response_carries_no_body_headers(client, method, call):
     assert response.status_code == 204
     assert response.content == b""
     assert "content-type" not in {name.lower() for name in response.headers}
+
+
+# -- training with the teacher's voice (D-12) --------------------------------
+
+
+def test_voice_training_status_lists_what_to_record(client):
+    body = client.get("/api/voice").json()
+    assert body["phrase"] == "Oye Chat"
+    assert len(body["phrase_takes"]) == 5
+    assert "Oye chico" in body["near_miss_prompts"]
+    assert body["state"] == "idle"
+
+
+def test_voice_training_refuses_to_start_without_recordings(client):
+    response = client.post("/api/voice/train")
+    assert response.status_code == 409
+
+
+def test_voice_recording_is_refused_while_the_class_listens(client):
+    client.post("/api/class/prepare")
+    client.post("/api/class/start")
+
+    response = client.post("/api/voice/takes/phrase/0")
+    assert response.status_code == 409
+    assert "Pausa" in response.json()["detail"]
+
+
+def test_an_unknown_kind_of_take_is_not_found(client):
+    assert client.post("/api/voice/takes/cancion/0").status_code == 404
+
+
+def test_voice_endpoints_need_the_token(client):
+    client.headers.pop(TOKEN_HEADER)
+    assert client.get("/api/voice").status_code == 401

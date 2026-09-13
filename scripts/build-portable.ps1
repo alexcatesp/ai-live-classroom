@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds the portable folder for Windows (spec section 17, D-09).
 
@@ -54,7 +54,7 @@ try {
     & .\.venv\Scripts\python.exe -m PyInstaller aiclassroom-backend.spec --noconfirm --clean
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller ha fallado." }
 
-    & .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword
+    & .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword --require-training
     if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
 }
 finally { Pop-Location }
@@ -156,5 +156,5 @@ Write-Host ""
 Write-Host "Carpeta portable: $staging" -ForegroundColor Green
 Write-Host "Archivo comprimido: $zip" -ForegroundColor Green
 Write-Host ""
-Write-Host "Falta copiar el modelo de activación a data\models\oye_chat.onnx" -ForegroundColor Yellow
+Write-Host "Falta copiar a data\models\ oye_chat.onnx y oye_chat.corpus.npz" -ForegroundColor Yellow
 Write-Host "(se genera con scripts\train_wakeword.py)." -ForegroundColor Yellow

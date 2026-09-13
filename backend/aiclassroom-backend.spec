@@ -33,6 +33,15 @@ hidden_imports = [
     # and scikit-learn end up in the bundle even though no custom verifier is
     # ever loaded.
     "openwakeword.custom_verifier_model",
+    # "Entrenar con mi voz" (D-12): the classifier, the split and the exporter.
+    # Imported inside functions, which static analysis does not always follow;
+    # --selftest --require-training proves they made it.
+    "sklearn.neural_network",
+    "sklearn.model_selection",
+    "onnx",
+    "onnx.helper",
+    "onnx.numpy_helper",
+    "onnx.checker",
 ]
 
 # openWakeWord's own package data. The two shared models it would otherwise

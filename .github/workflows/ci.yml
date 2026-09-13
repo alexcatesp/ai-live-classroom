@@ -111,7 +111,8 @@ jobs:
           path: data/models
           key: >-
             wakeword-${{ hashFiles('scripts/train_wakeword.py',
-            'scripts/fetch_wakeword_runtime.py') }}
+            'scripts/fetch_wakeword_runtime.py',
+            'backend/src/aiclassroom/voice/training.py') }}
 
       - name: Dependencias
         if: steps.cache.outputs.cache-hit != 'true'
@@ -176,7 +177,7 @@ jobs:
         working-directory: backend
         run: |
           $env:AICLASSROOM_DATA_DIR = "$env:RUNNER_TEMP\selftest"
-          .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword
+          .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword --require-training
           if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
 
       - name: Construir el frontend
@@ -217,7 +218,7 @@ jobs:
       - name: Comprobar la carpeta portable
         run: |
           $backend = "release\AI-Classroom-Live\runtime\backend\aiclassroom-backend.exe"
-          $output = & $backend --selftest --require-audio --require-wakeword
+          $output = & $backend --selftest --require-audio --require-wakeword --require-training
           if ($LASTEXITCODE -ne 0) { throw "La carpeta portable no supera el autotest." }
           Write-Host $output
           $report = $output | ConvertFrom-Json
@@ -233,6 +234,9 @@ jobs:
           }
           if (-not (Test-Path "release\AI-Classroom-Live\data\models\oye_chat.onnx")) {
             throw "Falta el modelo de la frase: la carpeta no detectaría nada."
+          }
+          if (-not (Test-Path "release\AI-Classroom-Live\data\models\oye_chat.corpus.npz")) {
+            throw "Falta el corpus base: no se podría entrenar con la voz del profesor (D-12)."
           }
 
           $size = (Get-ChildItem "release\AI-Classroom-Live" -Recurse -File |

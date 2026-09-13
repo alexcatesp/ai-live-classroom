@@ -173,6 +173,96 @@ body {
   transform: rotate(90deg);
 }
 
+/* -- voice training ------------------------------------------------------- */
+
+.voice-training {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.voice-content h3 {
+  margin: 16px 0 6px;
+  font-size: 0.95rem;
+}
+
+.app ol.takes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.app ol.takes .take { margin-bottom: 0; }
+
+.take {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.take button { padding: 6px 14px; }
+
+.take-state { color: var(--muted); font-size: 0.85rem; }
+.take-done .take-state { color: var(--tone-listening); }
+
+.take-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--tone-danger);
+  font-size: 0.85rem;
+}
+
+/* A bar that runs for the length of the take, so the teacher can see how long
+   they have left to speak. */
+.take-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--tone-danger);
+  transform-origin: left;
+  animation-name: take-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes take-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.personal-model,
+.training-result,
+.training-progress {
+  margin: 12px 0;
+}
+
+.personal-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.personal-model p { margin: 0; }
+
+.training-result ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.voice-content > .primary { margin-top: 16px; }
+
 .state-controls {
   margin-top: 16px;
   padding-top: 16px;

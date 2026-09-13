@@ -631,7 +631,37 @@ Devuelve falsos por hora y tasa de detección para cada sensibilidad. El objetiv
 razonable es 0 falsos por hora con detección por encima del 90%. Anota aquí el
 resultado.
 
-### R-2 — Latencia con WebSocket en lugar de WebRTC — *instrumentado*
+### R-2 — Latencia con WebSocket en lugar de WebRTC — *medido: WebSocket basta*
+
+**Primera medida del turno completo (13/09/2026)**, con «Probar
+conversación», contra la API real, desde el PC de desarrollo con Avast
+inspeccionando HTTPS:
+
+| Medida | Valor |
+|---|---|
+| Abrir la sesión (una vez por clase) | 0,84 s |
+| Fin de la pregunta → primer audio (red y modelo) | **0,45 s** |
+| Silencio de fin de pregunta (configurado) | 2,0 s |
+| Espera total de quien pregunta | ~2,45 s |
+| Duración de la respuesta | 31,1 s |
+| Consumo | 968 tokens |
+
+Conclusiones:
+
+- **El transporte no es el cuello de botella.** 0,45 s hasta el primer audio
+  deja sin motivo el cambio a WebRTC por latencia (D-06 se mantiene). Queda por
+  repetir la medida en la red del instituto.
+- **Lo que más pesa en la espera es el silencio configurado.** Si en clase se
+  hace largo, se baja `turn_silence_ms` antes de tocar nada más.
+- **La respuesta es demasiado larga:** 31 s para una pregunta sencilla, frente a
+  los 10–20 s de spec §12. Se aborda en H5, con instrucciones de brevedad, un
+  tope de duración y la velocidad de habla.
+- **Precisión:** la respuesta situó la acuñación del término «en» la conferencia
+  de Dartmouth (1956), cuando aparece en la propuesta de 1955. Es un error
+  menor, pero va contra spec §12 («no inventar datos»), y conviene tenerlo en
+  cuenta en las instrucciones (H5) y en el uso de materiales (H6).
+
+**Antes de esta medida:**
 
 El diagnóstico mide el tiempo de establecimiento de la sesión Realtime, lo
 muestra en pantalla y avisa por encima de 1,5 segundos. Cubre lo que aporta la
@@ -759,7 +789,7 @@ distribuye.
 | # | Riesgo | Estado | Qué falta |
 |---|--------|--------|-----------|
 | R-1 | Falsos positivos de «Oye Chat» | 0/hora medidos sobre voz sintética | Reentrenar con voces reales y medir una clase |
-| R-2 | Latencia del transporte WebSocket | Instrumentado y avisado | Leer el número en el instituto |
+| R-2 | Latencia del transporte WebSocket | 0,45 s al primer audio medidos: WebSocket basta | Repetir la medida en la red del instituto |
 | R-3 | Inspección TLS en la red del centro | Detectado y nombrado | — |
 | R-4 | Peso de la carpeta portable | Cerrado por decisión | — |
 | R-5 | La clave no viaja con la carpeta | Resuelto (contraseña opcional) | — |

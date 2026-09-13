@@ -94,7 +94,10 @@ Ordenados por riesgo: primero lo que puede invalidar el enfoque.
 el servidor falso, y una frase real grabada recibe una respuesta de la API real
 en un script de prueba manual.
 
-**Estado (13/09/2026): implementado, pendiente de la prueba con la API real.**
+**Estado (13/09/2026): terminado.** Probado con la API real desde la aplicación:
+0,84 s para abrir la sesión y 0,45 s desde el fin de la pregunta hasta el primer
+audio. Las medidas y sus conclusiones están en R-2. Dos tareas para H5: la
+respuesta duró 31 s (el objetivo son 10–20 s) y contenía una imprecisión menor.
 
 - `realtime/session.py`: `RealtimeConnection` (un WebSocket configurado) y
   `ManagedRealtimeSession` (la sesión de toda la clase). Incluye reconexión con

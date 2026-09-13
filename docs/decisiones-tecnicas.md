@@ -550,6 +550,29 @@ corpus apartado. No se pudo probar con voz humana real fuera del aula.
 También en esta ronda: «Chat» sola se rechazaba por corta. El mínimo de 0,3 s
 era más largo que la palabra, y el recorte se comía la «ch» y la «t».
 
+### P-15 — Una respuesta rápida llegaba antes de abrir el altavoz
+
+El CI de H2 se detuvo dos veces en el mismo punto, con el mensaje «The runner
+has received a shutdown signal» y sin ningún test fallido.
+
+- «Probar conversación» abría el altavoz en un paso aparte, después de notar
+  que la pregunta había terminado.
+- En Linux, el servidor Realtime falso respondía tan rápido que la respuesta
+  entera, con su final, llegaba antes de ese paso.
+- El flujo se quedaba esperando un final que ya había pasado, y el altavoz
+  simulado reproducía silencio sin fin hasta agotar la memoria del runner.
+
+En Windows no aparecía, porque el orden de llegada era otro. En la aplicación
+habría perdido el principio de una respuesta rápida y dejado el panel en
+«reproduciendo» para siempre.
+
+Resuelto haciendo que el primer trozo de la respuesta abra el altavoz él mismo,
+con un test para una respuesta que llega entera antes de sonar. El altavoz
+simulado se detiene cuando no queda nada que reproducir.
+
+Lección: un «apagado» del runner no siempre es la infraestructura. Si se repite
+en el mismo punto, es el código.
+
 ## Verificado en Windows real
 
 El CI construyó la carpeta portable por primera vez el 13/09/2026

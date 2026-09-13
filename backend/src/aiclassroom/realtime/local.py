@@ -57,6 +57,14 @@ HISTORY_MESSAGES = 12
 RETRY_SECONDS = 5.0
 CONNECT_TIMEOUT = 5.0
 READ_TIMEOUT = 60.0
+# Loading a 27B model from disk took 72 s the first time on the RTX 5070 Ti,
+# and its first prompt two minutes more (13/09/2026). The class loads it as
+# it starts, so no question waits for that.
+WARM_UP_TIMEOUT = 300.0
+# The context and the answer ceiling live in the model's Modelfile
+# (docs/ollama/Modelfile.aula), not in each request: a request that set
+# num_ctx would reload a model another application keeps with a larger one.
+LLM_KEEP_ALIVE = "60m"
 
 # A sentence ends at one of these followed by a space, or at a line break.
 _SENTENCE_END = re.compile(r"(?<=[.!?…;:])\s+|\n+")
@@ -108,6 +116,9 @@ class ServerUnreachable(RuntimeError):
 class LocalServices(Protocol):
     async def check(self) -> None:
         """Raise RealtimeUnavailable if the server cannot hold a class."""
+
+    async def warm_up(self) -> None:
+        """Load the language model before the first question needs it."""
 
     async def transcribe(self, pcm16k: np.ndarray) -> str: ...
 
@@ -175,6 +186,17 @@ class HttpLocalServices:
                 fatal=True,
             )
 
+    async def warm_up(self) -> None:
+        # A generate request without a prompt only loads the model.
+        await self._client.post(
+            self._config.llm_url + "/api/generate",
+            json={
+                "model": self._config.llm_model,
+                "keep_alive": LLM_KEEP_ALIVE,
+            },
+            timeout=WARM_UP_TIMEOUT,
+        )
+
     async def transcribe(self, pcm16k: np.ndarray) -> str:
         config = self._config
         try:
@@ -201,7 +223,7 @@ class HttpLocalServices:
             # A classroom question needs no deliberation, and Qwen's thinking
             # would be seconds of silence before the first word.
             "think": False,
-            "keep_alive": "60m",
+            "keep_alive": LLM_KEEP_ALIVE,
         }
         try:
             async with self._client.stream(
@@ -338,6 +360,7 @@ class LocalConversationSession:
         self._listeners: list[Listener] = []
         self._loop: asyncio.AbstractEventLoop | None = None
         self._supervisor: asyncio.Task | None = None
+        self._warm_up: asyncio.Task | None = None
         self._stopping = False
 
         # Touched from the audio thread.
@@ -404,6 +427,7 @@ class LocalConversationSession:
             )
             raise
         self._set_state(ConnectionState.READY)
+        self._warm_up_soon()
 
     async def _retry(self) -> None:
         while not self._stopping:
@@ -417,7 +441,17 @@ class LocalConversationSession:
                 self._set_state(ConnectionState.RECONNECTING, str(exc))
                 continue
             self._set_state(ConnectionState.READY)
+            self._warm_up_soon()
             return
+
+    def _warm_up_soon(self) -> None:
+        async def warm_up() -> None:
+            try:
+                await self._services.warm_up()
+            except Exception as exc:  # noqa: BLE001 - the first question will say why
+                logger.warning("No se pudo precargar el modelo local: %s", exc)
+
+        self._warm_up = asyncio.ensure_future(warm_up())
 
     def _lost(self, why: str) -> None:
         if self._stopping:
@@ -428,12 +462,12 @@ class LocalConversationSession:
 
     async def stop(self) -> None:
         self._stopping = True
-        for task in (self._supervisor, self._answer):
+        for task in (self._supervisor, self._answer, self._warm_up):
             if task is not None and not task.done():
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
-        self._supervisor = self._answer = None
+        self._supervisor = self._answer = self._warm_up = None
         with contextlib.suppress(Exception):
             await self._services.close()
         self._set_state(ConnectionState.DISCONNECTED)

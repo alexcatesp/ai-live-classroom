@@ -1,0 +1,19 @@
+# Qwen3.8-27B for AI Classroom Live's local server (D-14).
+#
+#   ollama create qwen3.8-aula -f docs/ollama/Modelfile.aula
+#
+# Shares the weights of qwen3.8:27b, so it takes no extra disk. It exists so the
+# classroom's settings do not change the model other applications use with a
+# large context (Hermes Desktop needs 65k).
+#
+# Measured on the RTX 5070 Ti (13/09/2026): 9.3 GB of VRAM with this context,
+# against 13.7 GB with 65,536 tokens, leaving room for Whisper and Kokoro.
+# Both variants cannot sit on a 16 GB card at once: Ollama unloads one to load
+# the other.
+
+FROM qwen3.8:27b
+
+# A class needs a few questions and answers of history, not a book.
+PARAMETER num_ctx 8192
+# A ceiling for an answer read aloud: about a minute and a half of speech.
+PARAMETER num_predict 350

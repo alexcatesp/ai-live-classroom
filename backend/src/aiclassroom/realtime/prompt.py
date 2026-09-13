@@ -17,3 +17,16 @@ DEFAULT_INSTRUCTIONS = (
     # a person called by name answers "¿Sí?", not with a speech.
     "Si solo te dicen «Oye Chat» sin ninguna pregunta, contesta únicamente «¿Sí?» y espera."
 )
+
+# The local model reads a transcript, not the audio (D-14). The Realtime
+# model hears "Oye Chat" in the pre-roll; Qwen usually does not see it in
+# the text, and measured on 13/09/2026 it refused every question as "not
+# activated". It also wrote Markdown lists of 400 tokens, which a voice reads
+# badly and for over a minute.
+LOCAL_INSTRUCTIONS = DEFAULT_INSTRUCTIONS + (
+    " Cada mensaje que recibes es la transcripción de lo que alguien dijo justo después "
+    "de «Oye Chat»: la activación ya ha ocurrido, así que respóndelo siempre. Si el "
+    "mensaje está vacío o es solo «Oye Chat», contesta únicamente «¿Sí?». Tu respuesta "
+    "se leerá en voz alta: escribe solo frases completas, sin Markdown, listas, tablas, "
+    "código ni emojis. Responde en dos a cinco frases salvo que te pidan más detalle."
+)

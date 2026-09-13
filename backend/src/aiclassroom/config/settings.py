@@ -103,7 +103,9 @@ class Settings(BaseModel):
     local_stt_url: str = ""
     local_stt_model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"
     local_llm_url: str = ""
-    local_llm_model: str = "qwen3:14b"
+    # Built from docs/ollama/Modelfile.aula: qwen3.8:27b with a context and an
+    # answer length for a class, leaving the original to other applications.
+    local_llm_model: str = "qwen3.8-aula"
     local_tts_url: str = ""
     # Kokoro's Spanish voices: ef_dora, em_alex, em_santa.
     local_tts_voice: str = "ef_dora"

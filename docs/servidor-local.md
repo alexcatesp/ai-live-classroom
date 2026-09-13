@@ -46,20 +46,40 @@ docker run --detach --restart unless-stopped --name kokoro \
 
 Ollama se instala directamente en Windows desde ollama.com. Para que escuche
 fuera de `localhost`, define la variable de entorno `OLLAMA_HOST=0.0.0.0` y
-reinícialo. Después:
+reinícialo.
+
+**El modelo del aula.** La app usa `qwen3.8-aula`, una variante de
+`qwen3.8:27b` creada con [`ollama/Modelfile.aula`](ollama/Modelfile.aula):
+comparte los pesos, no ocupa más disco y fija un contexto de 8.192 tokens y un
+tope de 350 tokens por respuesta. El `qwen3.8:27b` original queda intacto para
+otras aplicaciones que necesitan más contexto, como Hermes Desktop.
 
 ```bash
-ollama pull qwen3:14b
+ollama create qwen3.8-aula -f docs/ollama/Modelfile.aula
 ```
+
+Las dos variantes no caben a la vez en 16 GB: si otra aplicación tiene cargado
+el original, Ollama lo descarga para cargar el del aula, y al revés. La app
+precarga el modelo al iniciar la clase.
 
 **Modelo de transcripción.** La aplicación pide
 `deepdml/faster-whisper-large-v3-turbo-ct2` por defecto. Descárgalo en speaches
 con su herramienta de modelos (`speaches-cli model download <id>`, ver su
 documentación) o cambia el nombre en Configuración por otro que ya tengas.
 
-**Memoria de vídeo (16 GB).** Whisper large-v3-turbo ocupa unos 2 GB, Kokoro
-alrededor de 1 GB y `qwen3:14b` cuantizado unos 9–10 GB: caben a la vez. Si
-falta memoria o la respuesta tarda en empezar, `qwen3:8b` es la alternativa.
+**Medido en la RTX 5070 Ti (13/09/2026), `qwen3.8:27b` Q2_K:**
+
+| | Contexto 65.536 (original) | Contexto 8.192 (`qwen3.8-aula`) |
+|---|---|---|
+| VRAM del modelo | 13,7 GB | 9,3 GB |
+| Primera palabra, con el modelo cargado | — | 0,35–0,8 s |
+| Primera frase completa | — | ≈ 1,4 s |
+| Velocidad | — | 52–57 tokens/s |
+| Carga desde disco | 72 s la primera vez; 10 s con el archivo en caché | |
+
+Con 9,3 GB quedan unos 4,8 GB para Whisper large-v3-turbo (~2 GB) y Kokoro
+(~1 GB). La calidad en español es buena para clase, con alguna imprecisión
+propia de una cuantización a 2 bits.
 
 ## 3. La aplicación
 
@@ -71,7 +91,7 @@ servidor** y rellena:
 | Transcripción (speaches) | `http://pc-casa:8000` |
 | Modelo de transcripción | `deepdml/faster-whisper-large-v3-turbo-ct2` |
 | Modelo de lenguaje (Ollama) | `http://pc-casa:11434` |
-| Modelo de Ollama | `qwen3:14b` |
+| Modelo de Ollama | `qwen3.8-aula` |
 | Voz (Kokoro) | `http://pc-casa:8880` |
 | Voz de Kokoro | `ef_dora` (también `em_alex`, `em_santa`) |
 

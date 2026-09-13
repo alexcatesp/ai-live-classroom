@@ -69,7 +69,7 @@ from ..config.store import SettingsStore
 from ..realtime import events
 from ..realtime.audio import REALTIME_RATE
 from ..realtime.local import LocalConfig, LocalConversationSession, create_speech_gate
-from ..realtime.prompt import DEFAULT_INSTRUCTIONS
+from ..realtime.prompt import DEFAULT_INSTRUCTIONS, LOCAL_INSTRUCTIONS
 from ..realtime.session import (
     ConnectionChanged,
     ConnectionState,
@@ -185,7 +185,7 @@ class TurnController:
         self._settings = settings
         if settings.ai_provider is AiProvider.LOCAL:
             session = self._local_session_factory(
-                settings, DEFAULT_INSTRUCTIONS, self._store.paths.models_dir
+                settings, LOCAL_INSTRUCTIONS, self._store.paths.models_dir
             )
         else:
             try:

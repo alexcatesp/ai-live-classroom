@@ -62,11 +62,15 @@ class FakeServices:
         self.transcribed: list[np.ndarray] = []
         self.conversations: list[list[dict]] = []
         self.spoken: list[str] = []
+        self.warmed_up = 0
         self.closed = False
 
     async def check(self) -> None:
         if self.unavailable is not None:
             raise self.unavailable
+
+    async def warm_up(self) -> None:
+        self.warmed_up += 1
 
     async def transcribe(self, pcm16k):
         self.transcribed.append(pcm16k)
@@ -168,6 +172,25 @@ async def test_qwen_is_asked_not_to_think_and_its_stream_is_read():
     assert seen["body"]["think"] is False
     assert seen["body"]["stream"] is True
     assert seen["body"]["model"] == "qwen3:14b"
+    # Context and length come from the Modelfile: a per-request num_ctx would
+    # reload a model another application keeps with a larger context.
+    assert "options" not in seen["body"]
+
+
+async def test_the_model_is_loaded_without_changing_its_parameters():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"done": True})
+
+    await http_services(handler).warm_up()
+
+    assert seen["url"] == "http://casa:11434/api/generate"
+    assert "prompt" not in seen["body"]
+    assert "options" not in seen["body"]
+    assert seen["body"]["keep_alive"] == "60m"
 
 
 async def test_kokoro_is_asked_for_raw_pcm_in_the_chosen_voice():
@@ -295,6 +318,15 @@ async def test_cancelling_confirms_afterwards_and_keeps_only_what_was_heard():
         await session.stop()
 
 
+async def test_the_model_is_loaded_as_soon_as_the_server_answers():
+    services = FakeServices()
+    session, _received = await open_session(services)
+    try:
+        await wait_until(lambda: services.warmed_up == 1)
+    finally:
+        await session.stop()
+
+
 async def test_an_unreachable_server_is_retried_while_the_class_listens():
     services = FakeServices(unavailable=RealtimeUnavailable("apagado"))
     session = LocalConversationSession(
@@ -307,6 +339,7 @@ async def test_an_unreachable_server_is_retried_while_the_class_listens():
 
         services.unavailable = None
         await wait_until(lambda: session.ready)
+        await wait_until(lambda: services.warmed_up == 1)
     finally:
         await session.stop()
     assert services.closed
@@ -371,6 +404,9 @@ async def test_a_class_on_the_local_server_needs_no_api_key(store):
         assert lesson.turns.last.outcome == "completada"
         assert lesson.turns.last.question == "¿Qué es HTML?"
         assert lesson.turns.last.answer == "HTML es un lenguaje. Sirve para marcar."
+        # The local model is told the activation already happened (D-14).
+        system = services.conversations[0][0]["content"]
+        assert "la activación ya ha ocurrido" in system
     finally:
         await lesson.stop()
 

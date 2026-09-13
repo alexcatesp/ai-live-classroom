@@ -373,9 +373,28 @@ y pierde calidad frente a Whisper grande, y el modelo dejaría de oír la
 entonación. Lo que de verdad cuesta es la voz de la respuesta. Se abarata
 acortándola (H5) o no usando la nube: eso es el servidor propio.
 
-**Pendiente de medir en el aula:** la latencia real a través de Tailscale desde
-la red del instituto, y la calidad de Kokoro en español frente a la voz de
-OpenAI.
+**Medido con el modelo real (13/09/2026), `qwen3.8:27b` Q2_K en la RTX 5070 Ti:**
+
+- **Con las instrucciones de la nube, Qwen se negaba a responder:** «No he
+  recibido la activación «Oye Chat»». El modelo Realtime oye la frase en el
+  audio del preroll; Qwen lee una transcripción que casi nunca la trae. El modo
+  local añade `LOCAL_INSTRUCTIONS`: la activación ya ha ocurrido, responde
+  siempre, y «¿Sí?» si solo se dijo «Oye Chat».
+- **Escribía listas en Markdown de 400 tokens**, más de un minuto de voz. Las
+  mismas instrucciones piden frases completas sin formato, de dos a cinco. Con
+  ellas, 80–120 tokens.
+- **Ollama le daba 65.536 tokens de contexto, 13,7 GB de VRAM.** El modelo del
+  aula se crea aparte con `docs/ollama/Modelfile.aula` (8.192 tokens, tope de
+  350), para no cambiar el modelo que otra aplicación usa con más contexto: 9,3
+  GB. Los parámetros van en el Modelfile y no en cada petición, porque un
+  `num_ctx` distinto obliga a Ollama a recargar el modelo.
+- **Latencia con el modelo cargado:** primera palabra en 0,35–0,8 s, primera frase
+  en unos 1,4 s, 52–57 tokens/s. **Cargarlo** llevó 72 s la primera vez, y el
+  primer prompt dos minutos más; por eso la sesión lo precarga al empezar la
+  clase.
+
+**Pendiente de medir en el aula:** la latencia a través de Tailscale desde la
+red del instituto, y la calidad de Kokoro en español frente a la voz de OpenAI.
 
 ---
 

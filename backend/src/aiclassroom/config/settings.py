@@ -44,6 +44,17 @@ class Settings(BaseModel):
     # it cannot hear itself through the speakers (risk R-6). 0 disables it.
     echo_guard_margin: float = Field(default=0.15, ge=0.0, le=0.6)
 
+    # The spoken turn (plan-fase-1). A question ends after this much silence:
+    # two seconds, decided for a calm room with a directional microphone.
+    turn_silence_ms: int = Field(default=2000, ge=300, le=5000)
+    # Speech-to-text for the transcript panel (D-11); empty disables it.
+    transcription_model: str | None = "gpt-4o-mini-transcribe"
+    # "near_field", "far_field" or None for the API's noise reduction.
+    realtime_noise_reduction: str | None = "far_field"
+    # Earlier turns kept in the conversation; each is paid for again on every
+    # new question (spec section 16).
+    history_turns: int = Field(default=4, ge=0, le=20)
+
     max_response_seconds: int = Field(default=45, ge=5, le=300)
     materials_dir: str | None = None
     transcript_retention: TranscriptRetention = TranscriptRetention.DISCARD

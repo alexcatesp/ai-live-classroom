@@ -94,6 +94,34 @@ Ordenados por riesgo: primero lo que puede invalidar el enfoque.
 el servidor falso, y una frase real grabada recibe una respuesta de la API real
 en un script de prueba manual.
 
+**Estado (13/09/2026): implementado, pendiente de la prueba con la API real.**
+
+- `realtime/session.py`: `RealtimeConnection` (un WebSocket configurado) y
+  `ManagedRealtimeSession` (la sesión de toda la clase). Incluye reconexión con
+  espera creciente, renovación entre turnos antes de una edad configurable
+  (50 min), y abandono inmediato si la clave o el modelo se rechazan.
+- `realtime/events.py`: construcción de los eventos del cliente y
+  normalización de los del servidor.
+- `realtime/audio.py`: remuestreo 16→24 kHz en streaming, idéntico a remuestrear
+  todo de una vez.
+- `tests/fake_realtime.py`: servidor falso con respuesta guionada, cancelación,
+  borrado de elementos, clave rechazada, configuración rechazada y cortes.
+- `scripts/realtime_smoke.py`: envía un WAV grabado a la API real e imprime la
+  transcripción, el tiempo hasta el primer audio y el consumo.
+- Configuración nueva: `turn_silence_ms` (2000), `transcription_model`,
+  `realtime_noise_reduction` y `history_turns` (4).
+
+Lo aprendido de la documentación al empezar:
+
+- **Una sesión abierta sin actividad no consume**: se cobra por tokens.
+  Decisión 3 confirmada: sesión persistente.
+- **El historial cuesta.** Cada pregunta y respuesta anteriores se vuelven a
+  facturar como entrada en cada turno nuevo. Por eso solo se conservan los
+  últimos turnos (`history_turns`) y los anteriores se borran de la
+  conversación con `conversation.item.delete`.
+- **No se encontró documentada la duración máxima** de una sesión Realtime. Por
+  eso se renueva a los 50 minutos, configurable, y siempre entre turnos.
+
 ### H2 — Reproducción en streaming
 
 - Ampliar `AudioEngine` con reproducción por bloques: cola de PCM que se
@@ -200,9 +228,10 @@ Opciones:
 - **c) Adelantar el RAG con embeddings** a la Fase 1: más trabajo y más peso en
   la carpeta portable.
 
-**3. Sesión Realtime persistente o por pregunta (H1).**
-Recomendado: persistente, por la latencia medida. Hay que confirmar que una
-sesión abierta sin actividad no consume, y conocer su duración máxima.
+**3. Sesión Realtime persistente o por pregunta (H1). — Decidido: persistente.**
+Una sesión abierta sin actividad no consume. Como la duración máxima no está
+documentada, se renueva entre turnos. El historial se limita para que el coste
+no crezca con la clase.
 
 **4. Guardar transcripciones (H5, H7).**
 La spec dice «solo si el profesor lo activa». Propuesta: desactivado por

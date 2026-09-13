@@ -152,7 +152,7 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 295 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 316 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
@@ -282,6 +282,21 @@ arruinaría la clase, así que hay tres defensas encadenadas:
 Medido sobre ruido con el motor real, a sensibilidad extrema: **60 falsos por
 hora sin filtro de voz, 0 con él**. Las tres son configurables y desactivables,
 precisamente para poder medir cuánto aporta cada una.
+
+### Probar la conversación con la API real (Fase 1, H1)
+
+La conversación todavía no está conectada a la interfaz, pero el cliente
+Realtime ya puede probarse con una pregunta grabada:
+
+```bash
+export OPENAI_API_KEY=sk-...          # en PowerShell: $env:OPENAI_API_KEY="sk-..."
+python scripts/realtime_smoke.py pregunta.wav --output respuesta.wav
+```
+
+Imprime la transcripción de la pregunta y de la respuesta, el tiempo hasta el
+primer audio y el consumo, y guarda la respuesta hablada. Cuesta unos céntimos
+por ejecución. Con Python 3.13 detrás de un antivirus que inspeccione HTTPS,
+añade `--relaxed-tls` (R-8).
 
 ### Medir en tu aula
 

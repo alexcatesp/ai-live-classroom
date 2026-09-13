@@ -60,6 +60,10 @@ export interface Settings {
   wake_vad_threshold: number;
   wake_confirmation_frames: number;
   echo_guard_margin: number;
+  turn_silence_ms: number;
+  transcription_model: string | null;
+  realtime_noise_reduction: string | null;
+  history_turns: number;
   max_response_seconds: number;
   materials_dir: string | null;
   transcript_retention: "discard" | "session_only" | "keep";

@@ -160,6 +160,8 @@ class ListeningOut(BaseModel):
     phrase: str | None
     vad_enabled: bool
     confirmation_frames: int | None
+    input_level: float
+    speech_probability: float | None
 
     @classmethod
     def of(cls, status: ListeningStatus) -> ListeningOut:

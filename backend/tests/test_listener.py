@@ -202,3 +202,47 @@ def test_suppressions_are_counted_so_the_margin_can_be_tuned(
     # The refractory window lets only the first of the three reach the guard.
     assert listener.stats.echo_suppressions == 1
     assert listener.stats.frames_processed == 3
+
+
+# -- the microphone level meter --------------------------------------------
+
+
+def test_silence_reads_as_no_level():
+    from aiclassroom.audio.listener import frame_level
+
+    assert frame_level(np.zeros(FRAME_SAMPLES, dtype=np.int16)) == 0.0
+    assert frame_level(np.zeros(0, dtype=np.int16)) == 0.0
+
+
+def test_a_voice_level_sits_well_inside_the_meter():
+    """A voice at -30 dBFS must fill about half the bar, not a sliver of it."""
+    from aiclassroom.audio.listener import frame_level
+
+    amplitude = 32768 * 10 ** (-30 / 20) * np.sqrt(2)  # sine with -30 dBFS RMS
+    t = np.arange(FRAME_SAMPLES) / 16000
+    frame = (amplitude * np.sin(2 * np.pi * 440 * t)).astype(np.int16)
+
+    assert 0.45 < frame_level(frame) < 0.55
+
+
+def test_full_scale_fills_the_meter_without_overflowing():
+    from aiclassroom.audio.listener import frame_level
+
+    frame = np.full(FRAME_SAMPLES, -32768, dtype=np.int16)
+    assert frame_level(frame) == 1.0
+
+
+def test_the_listener_reports_the_loudest_recent_level(engine: FakeAudioEngine):
+    """A word between two polls of the interface must still show on the bar."""
+    machine = listening_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([]), machine)
+    listener.start()
+
+    loud = np.full(FRAME_SAMPLES, 3000, dtype=np.int16)
+    quiet = np.zeros(FRAME_SAMPLES, dtype=np.int16)
+    engine.feed(np.concatenate([loud, quiet, quiet]))
+
+    assert listener.stats.input_level > 0.5
+
+    engine.feed(np.concatenate([quiet] * 10))
+    assert listener.stats.input_level == 0.0

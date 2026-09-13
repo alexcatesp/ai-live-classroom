@@ -296,6 +296,21 @@ class OpenWakeWordDetector:
         score = float(predictions.get(self._model_key, max(predictions.values(), default=0.0)))
         return self._tracker.observe(score)
 
+    def speech_probability(self) -> float | None:
+        """Silero's latest verdict on whether someone is speaking, or None.
+
+        Shown next to the microphone level so a teacher can tell "the
+        microphone hears nothing" apart from "it hears me, but not the phrase".
+        """
+        if not self.vad_enabled:
+            return None
+        buffer = getattr(getattr(self._model, "vad", None), "prediction_buffer", None)
+        if not buffer:
+            return 0.0
+        # The buffer holds the last ~10 s; the recent max matches the meter's
+        # half-second window, so a short word is not lost between polls.
+        return float(max(list(buffer)[-7:]))
+
     def reset(self) -> None:
         self._tracker.reset()
         reset_buffers = getattr(self._model, "reset", None)

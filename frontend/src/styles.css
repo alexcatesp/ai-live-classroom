@@ -252,6 +252,21 @@ button:disabled {
   background: var(--tone-warning);
 }
 
+.meter-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.meter-label + .meter { margin-top: 4px; }
+
+.meter-level .meter-fill { background: var(--tone-listening); }
+
+.voice-on { color: var(--tone-listening); font-weight: 600; }
+.voice-off { color: var(--muted); }
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

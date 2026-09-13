@@ -8,6 +8,11 @@
 
 import type { ListeningStatus } from "../lib/types";
 
+/** Matches DEFAULT_VAD_THRESHOLD in backend/src/aiclassroom/audio/wakeword.py. */
+const SPEECH_THRESHOLD = 0.5;
+/** About -57 dBFS: below this a real microphone is not delivering anything. */
+const SILENT_LEVEL = 0.05;
+
 interface Props {
   status: ListeningStatus | null;
 }
@@ -26,6 +31,9 @@ export function WakeWordMeter({ status }: Props) {
   const scores = status.recent_scores;
   const latest = scores.length > 0 ? (scores[scores.length - 1] ?? 0) : 0;
   const peak = scores.length > 0 ? Math.max(...scores) : 0;
+  const level = Math.min(Math.max(status.input_level ?? 0, 0), 1);
+  const speech = status.speech_probability ?? null;
+  const speaking = speech !== null && speech >= SPEECH_THRESHOLD;
 
   return (
     <section className="panel" aria-label="Palabra de activación">
@@ -33,6 +41,39 @@ export function WakeWordMeter({ status }: Props) {
       <p className="muted">
         Detectando «{status.phrase}» con umbral {threshold.toFixed(2)}.
       </p>
+
+      {/*
+        The level answers "does the microphone hear me at all?", which the
+        detector score cannot: that stays at zero until the phrase is heard.
+      */}
+      <div className="meter-label">
+        <span>Micrófono</span>
+        {speech !== null && (
+          <span className={speaking ? "voice-on" : "voice-off"}>
+            {speaking ? "Voz detectada" : "Sin voz"}
+          </span>
+        )}
+      </div>
+      <div
+        className="meter meter-level"
+        role="meter"
+        aria-valuenow={Number(level.toFixed(2))}
+        aria-valuemin={0}
+        aria-valuemax={1}
+        aria-label="Nivel del micrófono"
+      >
+        <div className="meter-fill" style={{ width: `${level * 100}%` }} />
+      </div>
+      {status.seconds_listening > 3 && level < SILENT_LEVEL && (
+        <p className="muted small">
+          No llega sonido del micrófono. Comprueba en Configuración que está elegido el
+          dispositivo correcto y que no está silenciado en Windows.
+        </p>
+      )}
+
+      <div className="meter-label">
+        <span>Detector</span>
+      </div>
 
       <ul className="guards">
         <li className={status.vad_enabled ? "guard-on" : "guard-off"}>

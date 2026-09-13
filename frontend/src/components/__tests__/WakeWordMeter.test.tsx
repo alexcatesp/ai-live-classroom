@@ -17,6 +17,8 @@ function status(overrides: Partial<ListeningStatus> = {}): ListeningStatus {
     phrase: "Oye Chat",
     vad_enabled: true,
     confirmation_frames: 2,
+    input_level: 0.6,
+    speech_probability: 0.9,
     ...overrides,
   };
 }
@@ -36,7 +38,7 @@ describe("WakeWordMeter", () => {
   it("reports the latest score on the meter", () => {
     // This is the number the sensitivity is tuned against in a real class (R-1).
     render(<WakeWordMeter status={status()} />);
-    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", "0.8");
+    expect(screen.getByRole("meter", { name: "Nivel actual del detector" })).toHaveAttribute("aria-valuenow", "0.8");
   });
 
   it("counts activations and interruptions separately", () => {
@@ -52,7 +54,7 @@ describe("WakeWordMeter", () => {
 
   it("copes with an empty score history", () => {
     render(<WakeWordMeter status={status({ recent_scores: [] })} />);
-    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", "0");
+    expect(screen.getByRole("meter", { name: "Nivel actual del detector" })).toHaveAttribute("aria-valuenow", "0");
   });
 });
 
@@ -82,5 +84,43 @@ describe("WakeWordMeter, defensas", () => {
   it("cuenta los ecos descartados, que es cómo se ajusta el margen", () => {
     render(<WakeWordMeter status={status({ echo_suppressions: 4 })} />);
     expect(screen.getByText("Ecos descartados").nextSibling).toHaveTextContent("4");
+  });
+});
+
+// -- does the microphone hear anything at all? ----------------------------
+
+describe("WakeWordMeter, micrófono", () => {
+  it("muestra el nivel del micrófono aparte del detector", () => {
+    render(<WakeWordMeter status={status({ input_level: 0.42 })} />);
+    expect(screen.getByRole("meter", { name: "Nivel del micrófono" })).toHaveAttribute(
+      "aria-valuenow",
+      "0.42",
+    );
+  });
+
+  it("dice cuándo el filtro de voz oye hablar", () => {
+    render(<WakeWordMeter status={status({ speech_probability: 0.9 })} />);
+    expect(screen.getByText("Voz detectada")).toBeInTheDocument();
+  });
+
+  it("dice cuándo no oye voz", () => {
+    render(<WakeWordMeter status={status({ speech_probability: 0.1 })} />);
+    expect(screen.getByText("Sin voz")).toBeInTheDocument();
+  });
+
+  it("no opina sobre la voz si el filtro está desactivado", () => {
+    render(<WakeWordMeter status={status({ speech_probability: null })} />);
+    expect(screen.queryByText("Voz detectada")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sin voz")).not.toBeInTheDocument();
+  });
+
+  it("avisa si tras unos segundos no llega sonido", () => {
+    render(<WakeWordMeter status={status({ input_level: 0, seconds_listening: 10 })} />);
+    expect(screen.getByText(/No llega sonido del micrófono/)).toBeInTheDocument();
+  });
+
+  it("no avisa nada más empezar, antes de que llegue audio", () => {
+    render(<WakeWordMeter status={status({ input_level: 0, seconds_listening: 1 })} />);
+    expect(screen.queryByText(/No llega sonido/)).not.toBeInTheDocument();
   });
 });

@@ -152,6 +152,9 @@ def test_listening_status_exposes_what_the_meter_needs(
     assert status.threshold == pytest.approx(0.65)
     assert len(status.recent_scores) == 3
     assert status.frames_processed == 3
+    # Silence in, silence on the level bar; no voice filter, no speech reading.
+    assert status.input_level == 0.0
+    assert status.speech_probability is None
 
 
 def test_listening_status_before_any_class_is_empty(controller: SessionController):

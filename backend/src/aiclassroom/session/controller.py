@@ -45,6 +45,22 @@ class ListeningStatus:
     phrase: str | None
     vad_enabled: bool
     confirmation_frames: int | None
+    #: Loudest microphone level of the last half second, 0..1.
+    input_level: float = 0.0
+    #: Silero's speech probability, or None when the voice filter is off.
+    speech_probability: float | None = None
+
+
+def _speech_probability(detector: WakeWordDetector | None) -> float | None:
+    """Only the real detector has a voice filter to ask."""
+    probe = getattr(detector, "speech_probability", None)
+    if not callable(probe):
+        return None
+    try:
+        return probe()
+    except Exception:  # noqa: BLE001 - a meter must never break the status
+        logger.debug("No se pudo leer la probabilidad de voz.", exc_info=True)
+        return None
 
 
 def _default_engine(settings: Settings) -> AudioEngine:
@@ -198,6 +214,8 @@ class SessionController:
             phrase=detector.phrase if detector else None,
             vad_enabled=bool(getattr(detector, "vad_enabled", False)),
             confirmation_frames=getattr(detector, "confirmation_frames", None),
+            input_level=stats.input_level if stats else 0.0,
+            speech_probability=_speech_probability(detector),
         )
 
     def _notify_detection(self, detection: Detection) -> None:

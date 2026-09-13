@@ -101,6 +101,10 @@ export interface ListeningStatus {
   phrase: string | null;
   vad_enabled: boolean;
   confirmation_frames: number | null;
+  /** Loudest microphone level of the last half second, 0..1. */
+  input_level: number;
+  /** Silero's speech probability, or null when the voice filter is off. */
+  speech_probability: number | null;
 }
 
 export type BackendEvent =

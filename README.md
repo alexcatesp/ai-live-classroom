@@ -67,6 +67,16 @@ sin tarjeta de sonido.
 6. **Preparar sesión** → **Iniciar clase**, y di «Oye Chat». El estado debe
    pasar a *Activado* y el medidor moverse.
 
+   Si no se activa, mira el panel **Palabra de activación** de arriba abajo. La
+   barra **Micrófono** debe moverse al hablar; si no se mueve, el problema es el
+   dispositivo, no el detector. **Voz detectada** indica que el filtro de voz te
+   oye. Si las dos cosas funcionan y el **Detector** sigue a cero, el sonido
+   llega pero el modelo no reconoce la frase: sube la sensibilidad o reentrénalo
+   con tu voz.
+
+   La diagnosis del **Detector** es una puntuación, no una transcripción: en
+   escucha pasiva no se transcribe nada, ni en local ni en la nube (spec §14).
+
 El artefacto incluye el detector ya entrenado. **Reconoce voces sintéticas**,
 que es con lo que se entrena en el CI: sirve para comprobar que todo funciona,
 no para fiarse de él en clase. Antes de usarlo de verdad, reentrénalo con
@@ -120,13 +130,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 213 tests, 2 omitidos
+.venv/bin/python -m pytest -q          # 254 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 73 tests
+npm run test                            # 86 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

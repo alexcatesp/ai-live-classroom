@@ -15,6 +15,8 @@ function status(overrides: Partial<ConversationTestStatus> = {}): ConversationTe
     result: null,
     can_play: false,
     playing: false,
+    played_ms: 0,
+    playback_error: null,
     ...overrides,
   };
 }
@@ -25,6 +27,7 @@ function fakeClient(current: ConversationTestStatus, extra: Record<string, unkno
     startConversationTest: vi.fn().mockResolvedValue(status({ state: "connecting" })),
     cancelConversationTest: vi.fn().mockResolvedValue(status()),
     playConversationTest: vi.fn().mockResolvedValue(current),
+    stopConversationPlayback: vi.fn().mockResolvedValue({ ...current, playing: false }),
     ...extra,
   } as unknown as BackendClient & Record<string, ReturnType<typeof vi.fn>>;
 }
@@ -82,11 +85,27 @@ describe("ConversationTest", () => {
     expect(screen.getByText("Consumo").nextSibling).toHaveTextContent("312 tokens");
   });
 
-  it("deja escuchar la respuesta", async () => {
+  it("deja escuchar la respuesta de nuevo", async () => {
     const client = fakeClient(done);
     await open(client);
-    await userEvent.click(await screen.findByRole("button", { name: "Escuchar la respuesta" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Escuchar de nuevo" }));
     expect(client.playConversationTest).toHaveBeenCalledOnce();
+  });
+
+  it("mientras suena, ofrece pararla y dice cuánto lleva", async () => {
+    const client = fakeClient({ ...done, playing: true, played_ms: 2_400 });
+    await open(client);
+    expect(await screen.findByText("Sonando: 2.4 s")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Escuchar de nuevo" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Parar la respuesta" }));
+    expect(client.stopConversationPlayback).toHaveBeenCalledOnce();
+  });
+
+  it("avisa si la respuesta llegó pero no pudo sonar", async () => {
+    await open(fakeClient({ ...done, playback_error: "Altavoces ocupados." }));
+    expect(await screen.findByText(/No se pudo reproducir la respuesta: Altavoces ocupados/))
+      .toBeInTheDocument();
   });
 
   it("explica por qué no pudo empezar", async () => {

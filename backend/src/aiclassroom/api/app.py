@@ -428,6 +428,10 @@ def create_app(context: AppContext) -> FastAPI:
     async def play_conversation_test() -> dict:
         return await probe_call(context.probe.play)
 
+    @app.post("/api/conversation-test/stop-playback", dependencies=guarded)
+    async def stop_conversation_playback() -> dict:
+        return await probe_call(context.probe.stop)
+
     # -- events -----------------------------------------------------------
 
     @app.websocket("/ws/events")

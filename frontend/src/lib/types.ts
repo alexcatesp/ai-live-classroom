@@ -175,6 +175,10 @@ export interface ConversationTestStatus {
   result: ConversationTestResult | null;
   can_play: boolean;
   playing: boolean;
+  /** Milliseconds of the answer actually heard so far. */
+  played_ms: number;
+  /** The answer arrived but the speakers could not be opened. */
+  playback_error: string | null;
 }
 
 export type BackendEvent =

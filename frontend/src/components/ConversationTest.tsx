@@ -101,9 +101,9 @@ export function ConversationTest({ client, classListening }: Props) {
 
       <div id={contentId} hidden={!expanded}>
         <p className="muted small">
-          Haz una pregunta en voz alta y escucha la respuesta de la API, con el micrófono y la
-          clave de la configuración. Es una prueba: en clase la conversación empezará con «Oye
-          Chat». Cada pregunta consume unos céntimos.
+          Haz una pregunta en voz alta y escucha la respuesta de la API, que suena mientras
+          llega, con el micrófono, los altavoces y la clave de la configuración. Es una prueba:
+          en clase la conversación empezará con «Oye Chat». Cada pregunta consume unos céntimos.
         </p>
 
         {classListening && (
@@ -118,7 +118,7 @@ export function ConversationTest({ client, classListening }: Props) {
         )}
 
         <div className="controls">
-          {running && status && !status.playing ? (
+          {status && RUNNING.has(status.state) ? (
             <button
               type="button"
               className="secondary"
@@ -130,22 +130,42 @@ export function ConversationTest({ client, classListening }: Props) {
             <button
               type="button"
               className="primary"
-              disabled={!client || classListening || running}
+              disabled={!client || classListening}
               onClick={() => client && void act(() => client.startConversationTest())}
             >
               {result ? "Otra pregunta" : "Hacer una pregunta"}
             </button>
           )}
-          {status?.can_play && (
+          {status?.playing ? (
             <button
               type="button"
-              disabled={status.playing}
-              onClick={() => client && void act(() => client.playConversationTest())}
+              className="secondary"
+              onClick={() => client && void act(() => client.stopConversationPlayback())}
             >
-              {status.playing ? "Reproduciendo…" : "Escuchar la respuesta"}
+              Parar la respuesta
             </button>
+          ) : (
+            status?.can_play && (
+              <button
+                type="button"
+                onClick={() => client && void act(() => client.playConversationTest())}
+              >
+                Escuchar de nuevo
+              </button>
+            )
           )}
         </div>
+
+        {status?.playing && (
+          <p className="muted small" aria-live="off">
+            Sonando: {(status.played_ms / 1000).toFixed(1)} s
+          </p>
+        )}
+        {status?.playback_error && (
+          <p className="warning-line">
+            No se pudo reproducir la respuesta: {status.playback_error}
+          </p>
+        )}
 
         {status && RUNNING.has(status.state) && (
           <p className="conversation-step" role="status" aria-live="polite">

@@ -152,13 +152,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 325 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 340 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 119 tests
+npm run test                            # 121 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio
@@ -290,8 +290,8 @@ propia aplicación: abre **Probar conversación**, pulsa **Hacer una pregunta** 
 habla. Usa el micrófono y la clave de la configuración. La pregunta termina sola
 tras un par de segundos de silencio, y el panel muestra lo que entendió, lo que
 respondió, cuánto tardó en abrir la sesión y en empezar a sonar la respuesta,
-y el consumo. **Escuchar la respuesta** la reproduce por los altavoces
-configurados. No se guarda la pregunta; la respuesta queda en memoria hasta la
+y el consumo. La respuesta se reproduce por los altavoces
+configurados; ahora suena mientras llega, y se puede parar al instante. No se guarda la pregunta; la respuesta queda en memoria hasta la
 siguiente prueba.
 
 También hay un script, sin interfaz, con una pregunta grabada en WAV:

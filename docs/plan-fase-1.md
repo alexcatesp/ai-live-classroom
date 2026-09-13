@@ -141,6 +141,32 @@ Lo aprendido de la documentación al empezar:
 **Terminado cuando** un audio de 30 s llega en trozos, suena sin cortes y se
 detiene en menos de 100 ms al pedirlo.
 
+**Estado (13/09/2026): terminado.**
+
+- `audio/playback.py`: `PlaybackBuffer`, una cola segura entre hilos, y su
+  envoltorio de PortAudio.
+  - La reproducción empieza con 150 ms en cola, para absorber el vaivén de la
+    red.
+  - Si la cola se vacía a mitad de respuesta, suena silencio y la respuesta
+    continúa; nunca se da por terminada antes de tiempo.
+  - Parar vacía la cola y aborta el flujo.
+  - `played_ms` cuenta solo lo que salió por el altavoz, descontada la latencia
+    del dispositivo. Es el dato que H4 envía para truncar.
+- El motor abre un flujo por respuesta, a 48 kHz y en bloques de 10 ms. Una
+  respuesta nueva sustituye a la anterior, y el flujo activo cuenta como
+  «reproduciendo» para la guarda de eco (R-6).
+- «Probar conversación» reproduce la respuesta **mientras llega**, con un botón
+  para pararla y otro para escucharla de nuevo.
+- Tests con un reloj simulado:
+  - 30 s en trozos de 200 ms suenan enteros (±5 ms);
+  - parar a los 1.250 ms informa de 1.250 ms oídos;
+  - alimentar y leer a la vez desde dos hilos no pierde ni repite muestras.
+- **Medido en el PC de desarrollo con altavoces reales: parada en 16 ms**, y el
+  dispositivo declara 100 ms de latencia de salida.
+
+Pendiente de oír en el aula: si 150 ms de preparación bastan con la red del
+centro, o si hay cortes que obliguen a subirlo.
+
 ### H3 — Orquestación del turno
 
 - Un `TurnController` que recorre los estados que ya existen:
@@ -179,6 +205,15 @@ audio fuera de la ventana activación → fin de turno.
   guardar salvo que el profesor lo active (spec §14).
 - Configuración (spec §18): voz de salida, duración máxima de respuesta y
   modelo.
+- **Selector de voz** en Configuración, pedido por el profesor tras la primera
+  prueba real. El campo `voice` ya existe («marin» por defecto) y la sesión ya
+  lo envía; falta el desplegable con las voces que admita el modelo, comprobadas
+  en la documentación. «Probar conversación» usará la voz elegida, para
+  comparar voces con la misma pregunta.
+- **Brevedad y precisión**, de la primera prueba real (R-2): una pregunta
+  sencilla recibió 31 s de respuesta (el objetivo son 10–20 s) con una
+  imprecisión menor. Instrucciones más concretas, tope de duración y velocidad
+  de habla.
 
 ### H6 — Materiales de la sesión
 

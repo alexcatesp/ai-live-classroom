@@ -226,4 +226,8 @@ export class BackendClient {
   playConversationTest(): Promise<ConversationTestStatus> {
     return this.request("/api/conversation-test/play", { method: "POST" });
   }
+
+  stopConversationPlayback(): Promise<ConversationTestStatus> {
+    return this.request("/api/conversation-test/stop-playback", { method: "POST" });
+  }
 }

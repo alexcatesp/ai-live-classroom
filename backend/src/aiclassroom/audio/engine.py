@@ -25,6 +25,7 @@ from .devices import (
     probe_devices,
     resolve_device,
 )
+from .playback import FakePlaybackStream, PlaybackStream, SoundDevicePlaybackStream
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,9 @@ class AudioEngine(Protocol):
 
     def stop_capture(self) -> None: ...
 
+    def open_playback(self, source_rate: int) -> PlaybackStream:
+        """Start a stream that plays int16 audio as it is fed (H2)."""
+
     def play(self, samples: np.ndarray, sample_rate: int = PLAYBACK_SAMPLE_RATE) -> None:
         """Play int16 mono samples, returning once they have been queued."""
 
@@ -80,6 +84,7 @@ class SoundDeviceAudioEngine:
         self._lock = threading.RLock()
         self._pending = np.empty(0, dtype=np.int16)
         self._playing_until = 0.0
+        self._playback: SoundDevicePlaybackStream | None = None
 
     @property
     def is_capturing(self) -> bool:
@@ -90,10 +95,13 @@ class SoundDeviceAudioEngine:
     def is_playing(self) -> bool:
         """Whether audio is still leaving the speakers.
 
-        PortAudio's own stream state is consulted first; the deadline is the
-        fallback for the moment between queueing samples and the stream
-        reporting itself active.
+        A streaming answer counts first (H2); then the deadline set by `play`,
+        which covers the moment between queueing samples and PortAudio
+        reporting the stream active.
         """
+        playback = self._playback
+        if playback is not None and playback.is_active:
+            return True
         if time.monotonic() < self._playing_until:
             return True
         try:
@@ -189,7 +197,29 @@ class SoundDeviceAudioEngine:
             self._playing_until = 0.0
             raise AudioError(f"No se pudo reproducir el audio: {exc}") from exc
 
+    def open_playback(self, source_rate: int) -> PlaybackStream:
+        inventory = probe_devices()
+        if inventory.error:
+            raise AudioError(inventory.error)
+        if not inventory.has_output:
+            raise AudioError("Windows no ofrece ningún dispositivo de salida de audio.")
+        device_index = resolve_device(inventory.outputs, self._output_device_name)
+        with self._lock:
+            # One answer at a time: a new one replaces whatever was playing.
+            if self._playback is not None and self._playback.is_active:
+                self._playback.stop()
+            try:
+                self._playback = SoundDevicePlaybackStream(source_rate, device=device_index)
+            except Exception as exc:  # noqa: BLE001 - PortAudio raises broadly
+                self._playback = None
+                raise AudioError(f"No se pudo abrir los altavoces: {exc}") from exc
+            return self._playback
+
     def stop_playback(self) -> None:
+        with self._lock:
+            playback = self._playback
+        if playback is not None:
+            playback.stop()
         try:
             import sounddevice
 
@@ -215,6 +245,7 @@ class FakeAudioEngine:
         self.playback_stopped = 0
         self.fail_on_capture: str | None = None
         self.playing = False
+        self.streams: list[FakePlaybackStream] = []
 
     @property
     def is_capturing(self) -> bool:
@@ -222,7 +253,15 @@ class FakeAudioEngine:
 
     @property
     def is_playing(self) -> bool:
-        return self.playing
+        return self.playing or any(stream.is_active for stream in self.streams)
+
+    def open_playback(self, source_rate: int) -> PlaybackStream:
+        for stream in self.streams:
+            if stream.is_active:
+                stream.stop()
+        stream = FakePlaybackStream(source_rate)
+        self.streams.append(stream)
+        return stream
 
     def start_capture(self, on_frame: FrameCallback) -> None:
         if self.fail_on_capture:
@@ -246,6 +285,9 @@ class FakeAudioEngine:
     def stop_playback(self) -> None:
         self.playback_stopped += 1
         self.playing = False
+        for stream in self.streams:
+            if stream.is_active:
+                stream.stop()
 
 
 def tone(seconds: float = 0.4, frequency: float = 440.0, sample_rate: int = PLAYBACK_SAMPLE_RATE):

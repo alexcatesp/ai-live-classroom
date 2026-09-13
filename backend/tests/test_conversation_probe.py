@@ -144,18 +144,63 @@ async def test_a_rejected_key_is_reported(store, engine):
         assert "clave" in probe.status()["error"]
 
 
-async def test_the_answer_can_be_played_back(store, engine):
+async def test_the_answer_plays_as_it_arrives(store, engine):
+    """H2: the speaker is fed piece by piece, not after the whole answer."""
+    store.set_api_key("sk-guardada")
+    async with FakeRealtimeServer(Script(audio_chunks=5)) as server:
+        probe = probe_for(store, server, engine)
+        await probe.start()
+        await asyncio.wait_for(probe.wait(), 10)
+
+        live = engine.streams[0]
+        live.play_out()
+        # Five 100 ms pieces at 24 kHz: half a second heard.
+        assert abs(live.played_ms - 500) <= 5
+        assert not live.is_active
+
+
+async def test_the_answer_can_be_heard_again(store, engine):
     store.set_api_key("sk-guardada")
     async with FakeRealtimeServer() as server:
         probe = probe_for(store, server, engine)
         await probe.start()
         await asyncio.wait_for(probe.wait(), 10)
-        await probe.play()
+        engine.streams[0].play_out()
 
-        samples, rate = engine.played[-1]
-        assert rate == 48_000
-        # Five 100 ms chunks at 24 kHz, upsampled to 48 kHz.
-        assert abs(samples.size - 24_000) <= 2
+        await probe.play()
+        again = engine.streams[-1]
+        assert len(engine.streams) == 2
+        again.play_out()
+        assert abs(again.played_ms - 500) <= 5
+
+
+async def test_the_answer_stops_at_once(store, engine):
+    store.set_api_key("sk-guardada")
+    async with FakeRealtimeServer(Script(audio_chunks=50)) as server:
+        probe = probe_for(store, server, engine)
+        await probe.start()
+        await asyncio.wait_for(probe.wait(), 10)
+        stream = engine.streams[0]
+        stream.advance(1_000)
+        assert probe.status()["playing"] is True
+
+        await probe.stop()
+        assert probe.status()["playing"] is False
+        assert stream.played_ms < 1_100
+
+
+async def test_a_new_question_silences_the_previous_answer(store, engine):
+    store.set_api_key("sk-guardada")
+    async with FakeRealtimeServer(Script(audio_chunks=50)) as server:
+        probe = probe_for(store, server, engine)
+        await probe.start()
+        await asyncio.wait_for(probe.wait(), 10)
+        first = engine.streams[0]
+        assert first.is_active
+
+        await probe.start()
+        assert not first.is_active
+        await asyncio.wait_for(probe.wait(), 10)
 
 
 async def test_nothing_to_play_before_an_answer(store, engine):

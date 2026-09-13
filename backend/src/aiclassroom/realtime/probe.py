@@ -16,6 +16,9 @@ measured:
   sound of the answer: network plus model, the part R-2 is about. The silence
   itself is reported separately, because it is a setting, not a delay.
 
+* The answer plays as it arrives, through the streaming playback of H2, and
+  can be stopped at once.
+
 The question's audio is not kept. The answer's audio stays in memory only
 until the next test, so it can be played back.
 """
@@ -34,11 +37,12 @@ from typing import Any
 import numpy as np
 
 from ..audio.engine import AudioEngine, AudioError
+from ..audio.playback import PlaybackStream
 from ..config.secrets import PassphraseRequired
 from ..config.settings import Settings
 from ..config.store import SettingsStore
 from . import events
-from .audio import REALTIME_RATE, StreamingResampler
+from .audio import REALTIME_RATE
 from .prompt import DEFAULT_INSTRUCTIONS
 from .session import ManagedRealtimeSession, RealtimeUnavailable
 
@@ -49,9 +53,6 @@ WAIT_FOR_SPEECH_SECONDS = 8.0
 # A question longer than this is ended by hand.
 MAX_QUESTION_SECONDS = 20.0
 ANSWER_TIMEOUT_SECONDS = 60.0
-# Played at 48 kHz: the rate nearly every Windows output device accepts
-# natively, where 24 kHz can be refused by some drivers.
-PLAYBACK_RATE = 48_000
 
 SessionFactory = Callable[[str, events.SessionConfig], ManagedRealtimeSession]
 
@@ -115,7 +116,10 @@ class ConversationProbe:
         self.answer_text = ""
         self._answer: list[np.ndarray] = []
         self._task: asyncio.Task | None = None
-        self._playing = False
+        # The answer plays as it arrives (H2); the same stream is replaced when
+        # the teacher asks to hear it again.
+        self._stream: PlaybackStream | None = None
+        self.playback_error: str | None = None
 
     # -- reporting ---------------------------------------------------------
 
@@ -127,8 +131,14 @@ class ConversationProbe:
             "answer": self.answer_text,
             "result": asdict(self.result) if self.result else None,
             "can_play": bool(self._answer) and self.state is ProbeState.DONE,
-            "playing": self._playing,
+            "playing": self.playing,
+            "played_ms": self._stream.played_ms if self._stream is not None else 0,
+            "playback_error": self.playback_error,
         }
+
+    @property
+    def playing(self) -> bool:
+        return self._stream is not None and self._stream.is_active
 
     @property
     def running(self) -> bool:
@@ -154,6 +164,8 @@ class ConversationProbe:
 
         self.state, self.error, self.result = ProbeState.CONNECTING, None, None
         self.question_text = self.answer_text = ""
+        self.playback_error = None
+        self.stop_playback()
         self._answer = []
         self._task = asyncio.create_task(self._run(api_key), name="conversation-probe")
 
@@ -195,10 +207,14 @@ class ConversationProbe:
                 marks.setdefault("first_audio", now)
                 self.state = ProbeState.ANSWERING
                 self._answer.append(event.pcm)
+                if self._stream is not None:
+                    self._stream.feed(event.pcm)  # heard as it arrives (H2)
             elif isinstance(event, events.OutputTranscript):
                 self.answer_text = event.text if event.final else self.answer_text + event.text
             elif isinstance(event, events.ResponseDone):
                 final["status"], final["usage"] = event.status, event.usage
+                if self._stream is not None:
+                    self._stream.finish()
                 response_done.set()
             elif isinstance(event, events.ApiError):
                 final.setdefault("error", event.message)
@@ -233,6 +249,7 @@ class ConversationProbe:
             engine.stop_capture()
             engine = None
             self.state = ProbeState.WAITING
+            self._open_stream(settings)
 
             try:
                 await asyncio.wait_for(response_done.wait(), self._answer_timeout)
@@ -264,6 +281,7 @@ class ConversationProbe:
             self.state, self.error = ProbeState.FAILED, str(exc)
         except asyncio.CancelledError:
             self.state = ProbeState.IDLE
+            self.stop_playback()
             raise
         except Exception as exc:  # noqa: BLE001 - whatever breaks, the teacher is told
             logger.exception("La prueba de conversación falló.")
@@ -276,18 +294,34 @@ class ConversationProbe:
 
     # -- playback ----------------------------------------------------------
 
+    def _open_stream(self, settings: Settings) -> None:
+        """Open the speakers before the answer arrives, so its first piece plays at once.
+
+        A speaker that cannot be opened does not fail the test: the answer is
+        still received, shown and measured, and the problem is reported.
+        """
+        try:
+            self._stream = self._engine_factory(settings).open_playback(REALTIME_RATE)
+        except AudioError as exc:
+            self._stream = None
+            self.playback_error = str(exc)
+
     async def play(self) -> None:
+        """Hear the last answer again, through the same streaming path."""
         if not self._answer or self.state is not ProbeState.DONE:
             raise ProbeUnavailable("No hay ninguna respuesta que escuchar.")
-        if self._playing:
+        if self.playing:
             raise ProbeUnavailable("La respuesta ya se está reproduciendo.")
-        pcm = np.concatenate(self._answer)
-        upsampled = StreamingResampler(REALTIME_RATE, PLAYBACK_RATE).process(pcm)
-        engine = self._engine_factory(self.store.load())
-        self._playing = True
-        try:
-            await asyncio.to_thread(engine.play, upsampled, PLAYBACK_RATE)
-        except AudioError as exc:
-            raise ProbeUnavailable(str(exc)) from exc
-        finally:
-            self._playing = False
+        self._open_stream(self.store.load())
+        if self._stream is None:
+            raise ProbeUnavailable(self.playback_error or "No se pudo abrir los altavoces.")
+        self._stream.feed(np.concatenate(self._answer))
+        self._stream.finish()
+
+    def stop_playback(self) -> None:
+        """Cut the answer at once (H2); H4's interruptions go through the same stop."""
+        if self._stream is not None and self._stream.is_active:
+            self._stream.stop()
+
+    async def stop(self) -> None:
+        self.stop_playback()

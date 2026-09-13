@@ -78,7 +78,7 @@ Dos terminales:
 ```bash
 # 1. El motor local. Anuncia su puerto y su token por stdout.
 cd backend
-python -m venv .venv && .venv/bin/pip install -e ".[dev,wakeword]"
+python -m venv .venv && .venv/bin/pip install -e ".[dev,wakeword,train]"
 .venv/bin/python ../scripts/fetch_wakeword_runtime.py --output ../data/models
 .venv/bin/python ../scripts/train_wakeword.py --models ../data/models   # unos minutos
 AICLASSROOM_DATA_DIR=../data .venv/bin/python -m aiclassroom.main --verbose

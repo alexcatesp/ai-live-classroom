@@ -40,6 +40,7 @@ if [ ! -f "$MODELS/openwakeword/melspectrogram.onnx" ]; then
 fi
 if [ ! -f "$MODELS/oye_chat.onnx" ]; then
     echo "Entrenando el detector (unos minutos)..."
+    "$PY" -m pip install -q -e "$ROOT/backend[train]" || fail "faltan dependencias de entrenamiento"
     "$PY" "$ROOT/scripts/train_wakeword.py" --phrase "Oye Chat" --models "$MODELS"
 fi
 

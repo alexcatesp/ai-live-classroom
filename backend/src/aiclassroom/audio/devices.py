@@ -35,6 +35,11 @@ class DeviceInventory:
     inputs: list[AudioDevice] = field(default_factory=list)
     outputs: list[AudioDevice] = field(default_factory=list)
     error: str | None = None
+    #: Whether PortAudio itself loaded. A machine with no sound card is a
+    #: different problem from a build that forgot to bundle the library: the
+    #: first is the classroom's to fix, the second is ours, and only the second
+    #: should ever fail a build.
+    library_available: bool = True
 
     @property
     def has_input(self) -> bool:
@@ -63,13 +68,18 @@ def probe_devices() -> DeviceInventory:
     """List the input and output devices Windows is offering us."""
     try:
         sounddevice = _import_sounddevice()
+    except RuntimeError as exc:
+        return DeviceInventory(error=str(exc), library_available=False)
+
+    try:
         raw_devices = sounddevice.query_devices()
         default_input, default_output = sounddevice.default.device
-    except RuntimeError as exc:
-        return DeviceInventory(error=str(exc))
     except Exception as exc:  # noqa: BLE001 - PortAudio raises a wide range
+        # The library is there; the host audio stack is not answering.
         logger.exception("Fallo al consultar los dispositivos de audio.")
-        return DeviceInventory(error=f"No se pudieron consultar los dispositivos: {exc}")
+        return DeviceInventory(
+            error=f"No se pudieron consultar los dispositivos de audio: {exc}"
+        )
 
     inputs: list[AudioDevice] = []
     outputs: list[AudioDevice] = []

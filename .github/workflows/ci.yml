@@ -129,7 +129,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y espeak-ng
           python -m pip install --upgrade pip
-          pip install -e "./backend[wakeword]"
+          pip install -e "./backend[train]"
 
       - name: Descargar el extractor de características
         if: steps.cache.outputs.cache-hit != 'true'

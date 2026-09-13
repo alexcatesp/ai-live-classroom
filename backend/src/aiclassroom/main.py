@@ -105,9 +105,10 @@ def selftest(
     with no audio hardware and no API key.
 
     With `require_audio` it also fails when PortAudio is missing from the
-    bundle. A runner with no sound card is fine -- zero devices is a valid
-    answer; a missing library is not, because it would reach the classroom as
-    an application that can never open a microphone.
+    bundle. A machine with no sound card is fine -- zero devices, or a host
+    stack that does not answer, is a valid answer on a build runner. A library
+    that did not make it into the bundle is not: that reaches the classroom as
+    an application which can never open a microphone.
     """
     from fastapi.testclient import TestClient
 
@@ -131,8 +132,8 @@ def selftest(
         payload = state.json()
 
     inventory = probe_devices()
-    if require_audio and inventory.error:
-        print(f"FALLO: la biblioteca de audio no está disponible: {inventory.error}",
+    if require_audio and not inventory.library_available:
+        print(f"FALLO: la biblioteca de audio no está empaquetada: {inventory.error}",
               file=sys.stderr)
         return 1
 
@@ -156,7 +157,8 @@ def selftest(
                 "data_dir": str(paths.root),
                 "frozen": bool(getattr(sys, "frozen", False)),
                 "python": sys.version.split()[0],
-                "audio_library": inventory.error is None,
+                "audio_library": inventory.library_available,
+                "audio_error": inventory.error,
                 "audio_inputs": len(inventory.inputs),
                 "audio_outputs": len(inventory.outputs),
                 "wakeword_engine": wakeword_ok,

@@ -19,6 +19,16 @@ dependencies = [
 # Bundled in the portable build; separate so the tests can run without the
 # ONNX runtime on a machine that only lints.
 wakeword = ["openwakeword>=0.6.0"]
+# Only for scripts/train_wakeword.py, which runs on a build machine and never
+# ships. scikit-learn and scipy arrive with openwakeword, but are named here
+# too: the trainer uses them directly and should not depend on somebody else's
+# transitive dependency staying put.
+train = [
+    "openwakeword>=0.6.0",
+    "onnx>=1.16",
+    "scikit-learn>=1.4",
+    "scipy>=1.11",
+]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.7"]
 
 [project.scripts]

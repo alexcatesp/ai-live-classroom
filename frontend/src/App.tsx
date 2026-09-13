@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ClassControls } from "./components/ClassControls";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatePanel } from "./components/StatePanel";
 import { WakeWordMeter } from "./components/WakeWordMeter";
@@ -33,6 +34,16 @@ export function App() {
   const [devices, setDevices] = useState<DeviceInventory | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  // A key locked behind a passphrase blocks the class, and settings are now out
+  // of sight, so the dialog opens itself rather than wait to be found.
+  const locked = Boolean(settings?.requires_passphrase && !settings.unlocked);
+  const settingsNeedAttention = locked || settings?.api_key_configured === false;
+  useEffect(() => {
+    if (locked) setSettingsOpen(true);
+  }, [locked]);
 
   const [listening, setListening] = useState<ListeningStatus | null>(null);
   const [controlBusy, setControlBusy] = useState(false);
@@ -218,8 +229,25 @@ export function App() {
   return (
     <main className="app">
       <header className="app-header">
-        <h1>AI Classroom Live</h1>
-        <p className="muted">Fase 0 · diagnóstico y palabra de activación</p>
+        <div>
+          <h1>AI Classroom Live</h1>
+          <p className="muted">Fase 0 · diagnóstico y palabra de activación</p>
+        </div>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Configuración"
+          aria-haspopup="dialog"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M19.14 12.94a7.5 7.5 0 0 0 .05-.94 7.5 7.5 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.63 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"
+            />
+          </svg>
+          {settingsNeedAttention && <span className="attention-dot" aria-hidden="true" />}
+        </button>
       </header>
 
       {/* In the order a class happens: check the equipment, run the class,
@@ -252,16 +280,18 @@ export function App() {
 
       <WakeWordMeter status={listening} />
 
-      <SettingsPanel
-        data={settings}
-        devices={devices}
-        saving={saving}
-        error={settingsError}
-        onSave={(next) => void saveSettings(next)}
-        onSaveApiKey={(key, passphrase) => void saveApiKey(key, passphrase)}
-        onClearApiKey={() => void clearApiKey()}
-        onUnlock={(passphrase) => void unlock(passphrase)}
-      />
+      <Modal title="Configuración" open={settingsOpen} onClose={closeSettings}>
+        <SettingsPanel
+          data={settings}
+          devices={devices}
+          saving={saving}
+          error={settingsError}
+          onSave={(next) => void saveSettings(next)}
+          onSaveApiKey={(key, passphrase) => void saveApiKey(key, passphrase)}
+          onClearApiKey={() => void clearApiKey()}
+          onUnlock={(passphrase) => void unlock(passphrase)}
+        />
+      </Modal>
     </main>
   );
 }

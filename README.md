@@ -61,8 +61,9 @@ sin tarjeta de sonido.
 2. Descomprime donde quieras: escritorio, una carpeta del usuario o un USB.
 3. Ejecuta `AI-Classroom-Live.exe`. Windows avisará de que el programa no está
    firmado — ver [`docs/antivirus.md`](docs/antivirus.md).
-4. En **Configuración**, introduce la clave de la API y elige micrófono y
-   altavoces.
+4. Abre **Configuración** con la rueda dentada de la esquina superior derecha,
+   introduce la clave de la API y elige micrófono y altavoces. Un punto rojo en
+   la rueda avisa de que falta la clave o de que hay que desbloquearla.
 5. Pulsa **Comprobar equipo** (primer panel) y resuelve lo que salga en rojo.
    Cuando todo esté bien puedes plegar el panel con la flecha; se vuelve a
    abrir solo si una comprobación impide empezar.
@@ -142,7 +143,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 90 tests
+npm run test                            # 95 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

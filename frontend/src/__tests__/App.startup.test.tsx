@@ -66,6 +66,21 @@ describe("App sin motor local", () => {
   });
 });
 
+describe("App, configuración", () => {
+  it("abre la configuración desde la rueda dentada y la cierra", async () => {
+    const userEvent = (await import("@testing-library/user-event")).default;
+    window.__AICLASSROOM_BACKEND__ = { port: 1234, token: "t" };
+    render(<App />);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Configuración" }));
+    expect(screen.getByRole("dialog", { name: "Configuración" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
 describe("App con el motor caído a media sesión", () => {
   it("no deja rechazos sin gestionar cuando la API falla", async () => {
     // The interface fires its refresh without awaiting it, so a rejection here

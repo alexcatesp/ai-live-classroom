@@ -275,6 +275,54 @@ cuál de los dos se usa.
 
 ---
 
+## D-13 — `gpt-realtime-2` y un historial que se lee desde la caché
+
+**Decisión.** El modelo por defecto pasa a ser `gpt-realtime-2`, pedido por el
+profesor el 13/09/2026. La conversación ya no se recorta pregunta a pregunta:
+la recorta el servidor, a la mitad y de una vez, cuando supera
+`history_max_tokens` (4.000 tokens por defecto).
+
+**Por qué.** Tras las pruebas de H3 el profesor vio 0,26 $ gastados. Precios de
+`gpt-realtime-2` por millón de tokens, según la documentación de OpenAI:
+
+| | Precio | Tokens por minuto | Por minuto |
+|---|---|---|---|
+| Audio de entrada | 32 $ | 600 | ≈ 0,019 $ |
+| Audio de salida | 64 $ | 1.200 | ≈ 0,077 $ |
+| Entrada cacheada | 0,40 $ | — | 80 veces menos |
+| Texto de salida (incluido el razonamiento) | 24 $ | — | — |
+
+Cada pregunta vuelve a leer como entrada toda la conversación anterior. La
+caché la abarata 80 veces, pero solo mientras la conversación no cambia. Hasta
+ahora, a partir del cuarto turno se borraba el más antiguo en cada pregunta, así
+que el principio cambiaba siempre y el historial se pagaba entero cada vez:
+hasta unos 0,09 $ por pregunta solo en historial.
+
+Con `truncation: retention_ratio` la conversación no se toca hasta llegar al
+límite:
+
+- Mientras no llega, el historial se lee desde la caché: unos 0,002 $ por
+  pregunta.
+- Al llegar, el servidor descarta la mitad más antigua y la caché falla una vez,
+  unos 0,06 $. Ocurre cada tres o cuatro preguntas con respuestas de 30 s.
+
+**Límites.**
+
+- La caché es «best-effort» y caduca tras unos minutos sin uso. En una clase
+  con preguntas muy espaciadas se paga el historial igualmente, y un límite
+  bajo acota ese coste.
+- Truncar una respuesta interrumpida (H4) cambia solo el final de la
+  conversación, así que no invalida lo anterior.
+- Un `settings.json` que aún guarda `gpt-realtime` se lee como
+  `gpt-realtime-2`, porque ese valor era el predeterminado y no una elección.
+  El archivo lleva desde ahora `settings_version`, y un modelo elegido después
+  se respeta.
+- `gpt-realtime-2` razona con esfuerzo «low» por defecto. No se cambia: más
+  esfuerzo sube la latencia y los tokens de salida.
+- Lo más caro sigue siendo la voz de la respuesta. Acortarla es H5.
+
+---
+
 ## Decisiones heredadas de la spec (§23), sin discusión
 
 - Aplicación de escritorio para Windows, no aplicación web.

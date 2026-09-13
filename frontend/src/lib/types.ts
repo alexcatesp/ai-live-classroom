@@ -63,7 +63,7 @@ export interface Settings {
   turn_silence_ms: number;
   transcription_model: string | null;
   realtime_noise_reduction: string | null;
-  history_turns: number;
+  history_max_tokens: number;
   max_response_seconds: number;
   materials_dir: string | null;
   transcript_retention: "discard" | "session_only" | "keep";

@@ -162,7 +162,7 @@ def main() -> int:
     )
     parser.add_argument("question", type=Path, help="WAV con la pregunta")
     parser.add_argument("--output", type=Path, default=Path("respuesta.wav"))
-    parser.add_argument("--model", default="gpt-realtime")
+    parser.add_argument("--model", default="gpt-realtime-2")
     parser.add_argument("--voice", default="marin")
     parser.add_argument("--silence-ms", type=int, default=2000)
     parser.add_argument(

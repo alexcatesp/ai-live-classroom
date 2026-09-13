@@ -272,3 +272,33 @@ def test_tokens_say_which_store_wrote_them():
     assert token_scheme("dpapi:AAAA") == "dpapi"
     assert token_scheme("sin-esquema") is None
     assert token_scheme(None) is None
+
+
+# -- the realtime model ------------------------------------------------------
+
+
+def test_the_default_model_is_gpt_realtime_2():
+    assert Settings().realtime_model == "gpt-realtime-2"
+
+
+def test_a_file_left_on_the_old_default_follows_the_new_one(store: SettingsStore):
+    """Nobody chose "gpt-realtime": it was what the application saved."""
+    store.paths.settings_file.write_text(
+        json.dumps({"settings": {"realtime_model": "gpt-realtime", "voice": "cedar"}}),
+        encoding="utf-8",
+    )
+    loaded = store.load()
+    assert loaded.realtime_model == "gpt-realtime-2"
+    assert loaded.voice == "cedar"
+
+
+def test_a_model_chosen_after_the_change_is_respected(store: SettingsStore):
+    store.save(Settings(realtime_model="gpt-realtime"))
+    assert store.load().realtime_model == "gpt-realtime"
+
+
+def test_any_other_model_in_an_old_file_is_kept(store: SettingsStore):
+    store.paths.settings_file.write_text(
+        json.dumps({"settings": {"realtime_model": "gpt-realtime-mini"}}), encoding="utf-8"
+    )
+    assert store.load().realtime_model == "gpt-realtime-mini"

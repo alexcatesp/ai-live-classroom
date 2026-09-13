@@ -10,7 +10,12 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 DEFAULT_WAKE_PHRASE = "Oye Chat"
-DEFAULT_REALTIME_MODEL = "gpt-realtime"
+DEFAULT_REALTIME_MODEL = "gpt-realtime-2"
+# The default until September 2026. A file that still holds it never chose a
+# model, so it follows the default (SettingsStore.load).
+PREVIOUS_DEFAULT_REALTIME_MODEL = "gpt-realtime"
+# Bumped when a stored setting has to be reinterpreted on load.
+SETTINGS_VERSION = 1
 DEFAULT_VOICE = "marin"
 OPENAI_HOST = "api.openai.com"
 
@@ -51,9 +56,12 @@ class Settings(BaseModel):
     transcription_model: str | None = "gpt-4o-mini-transcribe"
     # "near_field", "far_field" or None for the API's noise reduction.
     realtime_noise_reduction: str | None = "far_field"
-    # Earlier turns kept in the conversation; each is paid for again on every
-    # new question (spec section 16).
-    history_turns: int = Field(default=4, ge=0, le=20)
+    # The conversation is re-read as input on every new question (spec 16).
+    # Re-read from the cache it costs 80 times less, so the history is never
+    # edited turn by turn, which would miss the cache every time. When it
+    # outgrows this many tokens the server drops the older half in one go,
+    # and the cache is missed once. About six questions with 30 s answers.
+    history_max_tokens: int = Field(default=4000, ge=1000, le=32000)
     # Audio kept from just before an activation and sent with the question, so
     # "Oye Chat, ¿qué...?" said without a pause does not lose its first words.
     preroll_ms: int = Field(default=500, ge=0, le=2000)

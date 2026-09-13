@@ -217,21 +217,31 @@ async def test_truncation_says_how_much_was_actually_heard():
             await session.stop()
 
 
-async def test_old_turns_are_forgotten_so_a_long_class_does_not_pay_for_all_of_it():
+def test_the_history_is_truncated_in_large_steps_by_the_server():
+    """The re-read conversation is cheap only from the prompt cache (spec 16)."""
+    truncation = events.session_update(CONFIG)["session"]["truncation"]
+    assert truncation == {
+        "type": "retention_ratio",
+        "retention_ratio": 0.5,
+        "token_limits": {"post_instructions": 4000},
+    }
+
+
+async def test_nothing_is_deleted_between_turns_so_the_history_stays_cached():
+    """Deleting the oldest turn on every question changed the conversation's
+    start every time, and every question paid for the whole history again."""
     async with FakeRealtimeServer() as server:
-        session = session_for(server, history_turns=2)
+        session = session_for(server)
         received = Collector()
         session.subscribe(received)
         await session.start()
         try:
-            for turn in range(3):
+            for turn in range(6):
                 for frame in speech_frames(1.2):
                     session.append_audio(frame)
                 await wait_until(lambda t=turn: len(received.of(events.ResponseDone)) > t)
-            await wait_until(lambda: server.events("conversation.item.delete"))
-            deleted = {e["item_id"] for e in server.events("conversation.item.delete")}
-            # The first turn's question and answer, and nothing more recent.
-            assert deleted == {"user_0", "asst_0"}
+            await asyncio.sleep(0.1)
+            assert server.events("conversation.item.delete") == []
         finally:
             await session.stop()
 

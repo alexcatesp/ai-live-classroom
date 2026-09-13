@@ -118,16 +118,18 @@ respuesta duró 31 s (el objetivo son 10–20 s) y contenía una imprecisión me
   se puede escuchar a 48 kHz por los altavoces configurados. Adelanta a H1 una
   reproducción simple (el audio completo, sin streaming) que H2 sustituirá.
 - Configuración nueva: `turn_silence_ms` (2000), `transcription_model`,
-  `realtime_noise_reduction` y `history_turns` (4).
+  `realtime_noise_reduction` y `history_turns` (4), sustituido después por
+  `history_max_tokens` (D-13).
 
 Lo aprendido de la documentación al empezar:
 
 - **Una sesión abierta sin actividad no consume**: se cobra por tokens.
   Decisión 3 confirmada: sesión persistente.
 - **El historial cuesta.** Cada pregunta y respuesta anteriores se vuelven a
-  facturar como entrada en cada turno nuevo. Por eso solo se conservan los
-  últimos turnos (`history_turns`) y los anteriores se borran de la
-  conversación con `conversation.item.delete`.
+  facturar como entrada en cada turno nuevo. Al principio solo se conservaban
+  los últimos turnos y los anteriores se borraban con
+  `conversation.item.delete`. Resultó ser lo más caro: cambiaba el principio
+  de la conversación en cada pregunta y no dejaba usar la caché. Ver D-13.
 - **No se encontró documentada la duración máxima** de una sesión Realtime. Por
   eso se renueva a los 50 minutos, configurable, y siempre entre turnos.
 

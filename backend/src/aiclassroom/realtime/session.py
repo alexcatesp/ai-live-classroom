@@ -10,9 +10,11 @@ keeps that promise honest:
   reachable rather than pretending (spec section 19).
 * **It renews.** A session does not live forever. It is replaced before a
   configurable age, and only between turns, never in the middle of an answer.
-* **It forgets on purpose.** Every earlier question and answer is re-read as
-  input on each new turn, so a long class would pay for its whole history
-  every time. Only the last few turns are kept (spec section 16).
+* **It keeps the conversation cacheable.** Every earlier question and answer is
+  re-read as input on each new turn. Read from the prompt cache it costs 80
+  times less, but only while it stays unchanged, so nothing is deleted turn by
+  turn: the server truncates the history in large steps once it outgrows a
+  token budget (events.session_update, spec section 16).
 * **It gives up on what retrying cannot fix.** A rejected key is reported once,
   not hammered every thirty seconds for the rest of the lesson.
 
@@ -29,7 +31,6 @@ import logging
 import ssl
 import threading
 import time
-from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -48,9 +49,6 @@ CONNECT_TIMEOUT = 15.0
 # The documented maximum age of a session is not something to rely on, so the
 # session is renewed well before any plausible limit, between turns.
 DEFAULT_MAX_SESSION_SECONDS = 50 * 60
-# Earlier turns kept in the conversation: enough for "and what about the
-# other one?", few enough that a long class does not pay for all of it.
-DEFAULT_HISTORY_TURNS = 4
 RECONNECT_DELAYS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.0)
 
 
@@ -220,11 +218,6 @@ class RealtimeConnection:
 _FATAL_CODES = {"invalid_api_key", "model_not_found", "invalid_model", "insufficient_quota"}
 
 
-@dataclass
-class _Turn:
-    item_ids: list[str]
-
-
 class ManagedRealtimeSession:
     """The class-long session: reconnection, renewal and bounded history.
 
@@ -239,7 +232,6 @@ class ManagedRealtimeSession:
         url: str = REALTIME_URL,
         ssl_context: ssl.SSLContext | None = None,
         max_session_seconds: float = DEFAULT_MAX_SESSION_SECONDS,
-        history_turns: int = DEFAULT_HISTORY_TURNS,
         reconnect_delays: tuple[float, ...] = RECONNECT_DELAYS,
         connect_timeout: float = CONNECT_TIMEOUT,
         connector: Connector | None = None,
@@ -249,7 +241,6 @@ class ManagedRealtimeSession:
         self._url = url
         self._ssl_context = ssl_context
         self._max_session_seconds = max_session_seconds
-        self._history_turns = max(0, history_turns)
         self._reconnect_delays = reconnect_delays or (1.0,)
         self._connect_timeout = connect_timeout
         self._connector = connector
@@ -267,8 +258,6 @@ class ManagedRealtimeSession:
 
         # A turn runs from the first audio of a question to response.done.
         self._in_turn = False
-        self._current_items: list[str] = []
-        self._history: deque[_Turn] = deque()
         self.sessions_opened = 0
 
     # -- listeners ---------------------------------------------------------
@@ -356,9 +345,6 @@ class ManagedRealtimeSession:
             await previous.close()
         with self._resampler_lock:
             self._resampler.reset()
-        # A new session starts with an empty conversation.
-        self._history.clear()
-        self._current_items = []
         self._in_turn = False
         self.sessions_opened += 1
         self._set_state(ConnectionState.READY)
@@ -415,28 +401,12 @@ class ManagedRealtimeSession:
 
         if isinstance(event, events.SpeechStarted):
             self._in_turn = True
-        elif isinstance(event, events.ItemCreated):
-            if event.item_id not in self._current_items:
-                self._current_items.append(event.item_id)
         elif isinstance(event, events.ResponseDone):
-            for item_id in event.item_ids:
-                if item_id not in self._current_items:
-                    self._current_items.append(item_id)
-            self._finish_turn()
+            self._in_turn = False
         elif isinstance(event, events.ApiError):
             logger.warning("Error de la API Realtime: %s (%s)", event.message, event.code)
 
         self._emit(event)
-
-    def _finish_turn(self) -> None:
-        self._in_turn = False
-        if self._current_items:
-            self._history.append(_Turn(self._current_items))
-            self._current_items = []
-        while len(self._history) > self._history_turns:
-            oldest = self._history.popleft()
-            for item_id in oldest.item_ids:
-                self._send_soon(events.delete_item(item_id))
 
     # -- sending -----------------------------------------------------------
 

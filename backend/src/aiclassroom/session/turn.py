@@ -89,9 +89,7 @@ Publisher = Callable[[dict], None]
 def _default_session(
     api_key: str, config: events.SessionConfig, settings: Settings
 ) -> ManagedRealtimeSession:
-    return ManagedRealtimeSession(
-        api_key=api_key, config=config, history_turns=settings.history_turns
-    )
+    return ManagedRealtimeSession(api_key=api_key, config=config)
 
 
 @dataclass

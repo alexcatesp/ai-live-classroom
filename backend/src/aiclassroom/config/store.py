@@ -15,11 +15,19 @@ from .secrets import (
     create_secret_store,
     token_scheme,
 )
-from .settings import DataPaths, Settings, default_data_root
+from .settings import (
+    DEFAULT_REALTIME_MODEL,
+    PREVIOUS_DEFAULT_REALTIME_MODEL,
+    SETTINGS_VERSION,
+    DataPaths,
+    Settings,
+    default_data_root,
+)
 
 logger = logging.getLogger(__name__)
 
 _API_KEY_FIELD = "api_key_token"
+_VERSION_FIELD = "settings_version"
 
 
 class SettingsStore:
@@ -72,8 +80,14 @@ class SettingsStore:
 
     def load(self) -> Settings:
         document = self._read_document()
+        stored = dict(document.get("settings", {}))
+        if document.get(_VERSION_FIELD, 0) < 1:
+            # Saved before version 1: that model is the old default, not a
+            # choice anybody made.
+            if stored.get("realtime_model") == PREVIOUS_DEFAULT_REALTIME_MODEL:
+                stored["realtime_model"] = DEFAULT_REALTIME_MODEL
         try:
-            return Settings.model_validate(document.get("settings", {}))
+            return Settings.model_validate(stored)
         except ValidationError:
             logger.exception(
                 "settings.json contiene valores no válidos; se usan los predeterminados."
@@ -83,6 +97,7 @@ class SettingsStore:
     def save(self, settings: Settings) -> Settings:
         document = self._read_document()
         document["settings"] = settings.model_dump(mode="json")
+        document[_VERSION_FIELD] = SETTINGS_VERSION
         self._write_document(document)
         return settings
 

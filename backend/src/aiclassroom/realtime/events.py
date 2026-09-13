@@ -38,6 +38,12 @@ class SessionConfig:
     noise_reduction: str | None = "far_field"
     #: Tokens per response; "inf" leaves it to the instructions.
     max_output_tokens: int | str = "inf"
+    #: Input tokens a response may read besides the instructions. Past it, the
+    #: server drops the oldest part of the conversation...
+    history_max_tokens: int = 4000
+    #: ...down to this fraction of the limit, all at once, so the cache is
+    #: missed once every few questions rather than on every one.
+    history_retention_ratio: float = 0.5
 
 
 def config_from_settings(settings: Any, instructions: str) -> SessionConfig:
@@ -49,6 +55,7 @@ def config_from_settings(settings: Any, instructions: str) -> SessionConfig:
         transcription_model=settings.transcription_model or None,
         silence_ms=settings.turn_silence_ms,
         noise_reduction=settings.realtime_noise_reduction or None,
+        history_max_tokens=settings.history_max_tokens,
     )
 
 
@@ -66,6 +73,15 @@ def session_update(config: SessionConfig) -> dict[str, Any]:
             "output_modalities": ["audio"],
             "instructions": config.instructions,
             "max_output_tokens": config.max_output_tokens,
+            # Prompt caching bills a re-read conversation at a fraction of the
+            # price, but only while it stays identical. Deleting the oldest turn
+            # on every question changed it every time; truncating in large
+            # steps changes it rarely.
+            "truncation": {
+                "type": "retention_ratio",
+                "retention_ratio": config.history_retention_ratio,
+                "token_limits": {"post_instructions": config.history_max_tokens},
+            },
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcm", "rate": REALTIME_RATE},
@@ -124,10 +140,6 @@ def truncate_item(item_id: str, audio_end_ms: int) -> dict[str, Any]:
         "content_index": 0,
         "audio_end_ms": max(0, int(audio_end_ms)),
     }
-
-
-def delete_item(item_id: str) -> dict[str, Any]:
-    return {"type": "conversation.item.delete", "item_id": item_id}
 
 
 # -- server events -----------------------------------------------------------

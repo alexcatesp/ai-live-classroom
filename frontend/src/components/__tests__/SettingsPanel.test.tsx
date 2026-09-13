@@ -6,7 +6,7 @@ import { SettingsPanel } from "../SettingsPanel";
 import type { DeviceInventory, Settings, SettingsResponse } from "../../lib/types";
 
 const SETTINGS: Settings = {
-  realtime_model: "gpt-realtime",
+  realtime_model: "gpt-realtime-2",
   voice: "marin",
   input_device: null,
   output_device: null,
@@ -19,7 +19,7 @@ const SETTINGS: Settings = {
   turn_silence_ms: 2000,
   transcription_model: "gpt-4o-mini-transcribe",
   realtime_noise_reduction: "far_field",
-  history_turns: 4,
+  history_max_tokens: 4000,
   max_response_seconds: 45,
   materials_dir: null,
   transcript_retention: "discard",

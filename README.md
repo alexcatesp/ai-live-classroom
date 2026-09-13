@@ -119,6 +119,10 @@ pasiva.
 - Al iniciar la clase se abre la conexión con la API. Sin clave guardada, la
   clase no empieza y dice por qué. Sin red, la clase empieza igualmente, escucha
   y avisa en cada activación mientras reintenta.
+- **Coste:** se paga por tokens de audio. Con `gpt-realtime-2`, que es el modelo
+  por defecto, sale a unos 0,02 $ por minuto de pregunta y 0,08 $ por minuto de
+  respuesta. La conversación anterior se relee desde la caché, que es mucho más
+  barata (D-13).
 - Solo sale audio del equipo desde «Oye Chat» hasta el final de la pregunta.
   Durante la escucha pasiva no se envía nada.
 

@@ -359,3 +359,17 @@ input[type="range"] {
   color: var(--tone-warning);
   border-color: var(--tone-warning);
 }
+
+.startup-problem {
+  color: var(--tone-danger);
+  font-weight: 600;
+}
+
+.app ol {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+
+.app ol li {
+  margin-bottom: 8px;
+}

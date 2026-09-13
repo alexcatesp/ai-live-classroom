@@ -5,7 +5,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatePanel } from "./components/StatePanel";
 import { WakeWordMeter } from "./components/WakeWordMeter";
-import { BackendClient, readHandshake } from "./lib/api";
+import { BackendClient, readHandshake, readStartupProblem } from "./lib/api";
 import { useBackendConnection } from "./lib/useBackend";
 import type {
   DeviceInventory,
@@ -21,6 +21,7 @@ function describe(error: unknown): string {
 
 export function App() {
   const handshake = useMemo(readHandshake, []);
+  const startupProblem = useMemo(readStartupProblem, []);
   const client = useMemo(() => (handshake ? new BackendClient(handshake) : null), [handshake]);
   const { snapshot, connected, lastActivation } = useBackendConnection(client);
 
@@ -184,11 +185,31 @@ export function App() {
       <main className="app">
         <h1>AI Classroom Live</h1>
         <section className="panel" role="alert">
-          <h2>No se encontró el motor local</h2>
-          <p>
-            La aplicación no ha recibido los datos de conexión del proceso local. Cierra la
-            aplicación y vuelve a abrirla desde <code>AI-Classroom-Live.exe</code>.
-          </p>
+          <h2>No se pudo arrancar el motor local</h2>
+          {startupProblem ? (
+            <p className="startup-problem">{startupProblem}</p>
+          ) : (
+            <p>
+              La aplicación no ha recibido los datos de conexión del proceso local.
+            </p>
+          )}
+          <p className="muted">Comprueba, en este orden:</p>
+          <ol className="muted">
+            <li>
+              Que junto a <code>AI-Classroom-Live.exe</code> está la carpeta{" "}
+              <code>runtime\backend\</code> con todo su contenido. Si descomprimiste
+              solo algunos archivos, vuelve a hacerlo entero.
+            </li>
+            <li>
+              Que el antivirus del centro no se ha llevado{" "}
+              <code>runtime\backend\aiclassroom-backend.exe</code>. Es el caso más
+              frecuente, y está explicado en <code>docs/antivirus.md</code>.
+            </li>
+            <li>
+              El detalle completo en <code>data\arranque.log</code>, junto a la
+              aplicación.
+            </li>
+          </ol>
         </section>
       </main>
     );

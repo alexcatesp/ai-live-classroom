@@ -76,9 +76,16 @@ ni siquiera eso.
 SI ALGO FALLA
 -------------
 
-  La ventana dice "No se encontro el motor local"
-      El antivirus del centro puede haber bloqueado runtime\backend\. Comprueba
-      que la carpeta esta completa.
+  Haces doble clic y no se abre nada
+      No deberia pasar: la ventana se abre siempre, aunque el motor falle.
+      Si aun asi no aparece, mira data\arranque.log junto a la aplicacion.
+
+  La ventana dice "No se pudo arrancar el motor local"
+      Te dira el motivo. Los dos habituales:
+        - Descomprimiste solo una parte del ZIP. Junto a AI-Classroom-Live.exe
+          tiene que estar la carpeta runtime\backend\ entera.
+        - El antivirus se ha llevado runtime\backend\aiclassroom-backend.exe.
+          Ver docs\antivirus.md.
 
   El diagnostico falla en certificados o en la conexion
       La red del centro puede estar inspeccionando el trafico HTTPS o filtrando

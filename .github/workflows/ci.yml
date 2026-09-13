@@ -84,16 +84,6 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
-      # Tauri refuses to build without the sidecar, and the real one is only
-      # produced by the Windows job. A placeholder is enough to type-check the
-      # shell; the Windows job is what proves it links against the real backend.
-      - name: Sidecar de relleno
-        run: |
-          mkdir -p src-tauri/binaries
-          triple=$(rustc -vV | sed -n 's/^host: //p')
-          touch "src-tauri/binaries/aiclassroom-backend-${triple}"
-          chmod +x "src-tauri/binaries/aiclassroom-backend-${triple}"
-
       - name: Frontend para el contexto de Tauri
         working-directory: frontend
         run: npm ci && npm run build
@@ -188,13 +178,6 @@ jobs:
           $env:AICLASSROOM_DATA_DIR = "$env:RUNNER_TEMP\selftest"
           .\dist\backend\aiclassroom-backend.exe --selftest --require-audio --require-wakeword
           if ($LASTEXITCODE -ne 0) { throw "El backend empaquetado no supera el autotest." }
-
-      - name: Colocar el sidecar para Tauri
-        run: |
-          $triple = (rustc -vV | Select-String "^host:").ToString().Split(" ")[1]
-          New-Item -ItemType Directory -Force -Path src-tauri\binaries | Out-Null
-          Copy-Item backend\dist\backend\aiclassroom-backend.exe `
-                    "src-tauri\binaries\aiclassroom-backend-$triple.exe"
 
       - name: Construir el frontend
         working-directory: frontend

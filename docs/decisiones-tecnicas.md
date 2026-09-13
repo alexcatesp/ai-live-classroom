@@ -332,6 +332,36 @@ clippy; el de Windows es el que compila contra el backend real.
 
 ---
 
+### P-10 — Doble clic y no se abre nada
+
+El primer intento de ejecutar la carpeta portable en Windows no abrió ninguna
+ventana. Tres fallos encadenados, y el tercero es el que lo hizo invisible.
+
+**El mecanismo de sidecar de Tauri no encaja con este empaquetado.** `sidecar()`
+busca un ejecutable suelto junto a la aplicación; el backend vive en
+`runtime\backend\` porque PyInstaller en modo carpeta necesita su `_internal`
+al lado. Nunca lo encontraba.
+
+**Y aunque lo hubiera encontrado, no habría arrancado.** El CI copiaba solo el
+`.exe` a `binaries\`, sin el `_internal` que necesita para ejecutarse. Las dos
+rutas estaban rotas a la vez.
+
+**El `?` cerraba la aplicación en silencio.** Al fallar el arranque del backend,
+`setup` devolvía error, Tauri abortaba y no se creaba ninguna ventana. En una
+compilación de *release* no hay consola, así que no quedaba ni un mensaje: doble
+clic, nada, y nada que investigar. Es el peor fallo posible de los tres.
+
+Resuelto lanzando el backend por ruta explícita desde `runtime\backend\`, con
+alternativas para desarrollo, y sobre todo: **la ventana se abre siempre**. Si
+el motor no arranca, la ventana aparece con el motivo, con los dos sitios donde
+mirar —la carpeta incompleta y el antivirus— y el detalle queda en
+`data\arranque.log`. Un problema que nadie puede ver es un problema que nadie
+puede arreglar.
+
+Lección: el CI verificaba que la carpeta se construye y que el backend arranca
+por su cuenta, pero nada comprobaba que **el contenedor pudiera lanzar al
+backend**. Ese salto solo aparece al hacer doble clic.
+
 ## Verificado en Windows real
 
 El CI construyó la carpeta portable por primera vez el 13/09/2026

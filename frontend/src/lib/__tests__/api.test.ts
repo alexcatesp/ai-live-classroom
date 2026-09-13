@@ -106,3 +106,17 @@ describe("BackendClient", () => {
     expect(sockets).toEqual(["ws://127.0.0.1:54321/ws/events?token=token-de-prueba"]);
   });
 });
+
+describe("readStartupProblem", () => {
+  it("passes on what the shell said went wrong", async () => {
+    const { readStartupProblem } = await import("../api");
+    window.__AICLASSROOM_ERROR__ = "No se encontró el motor local.";
+    expect(readStartupProblem()).toBe("No se encontró el motor local.");
+    delete window.__AICLASSROOM_ERROR__;
+  });
+
+  it("is null when the shell said nothing", async () => {
+    const { readStartupProblem } = await import("../api");
+    expect(readStartupProblem()).toBeNull();
+  });
+});

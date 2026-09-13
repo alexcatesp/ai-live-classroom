@@ -23,7 +23,15 @@ export interface BackendHandshake {
 declare global {
   interface Window {
     __AICLASSROOM_BACKEND__?: BackendHandshake;
+    /** Set by the shell when the local engine could not be started. */
+    __AICLASSROOM_ERROR__?: string;
   }
+}
+
+/** Why the shell could not start the engine, if it said. */
+export function readStartupProblem(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.__AICLASSROOM_ERROR__ ?? null;
 }
 
 export class BackendError extends Error {

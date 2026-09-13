@@ -332,6 +332,36 @@ clippy; el de Windows es el que compila contra el backend real.
 
 ---
 
+## Verificado en Windows real
+
+El CI construyó la carpeta portable por primera vez el 13/09/2026
+([run 34746600377](https://github.com/alexcatesp/ai-live-classroom/actions/runs/34746600377)).
+El autotest del ejecutable ya empaquetado, ejecutado desde dentro de la carpeta:
+
+```json
+{"ok": true, "frozen": true, "python": "3.11.9",
+ "audio_library": true, "audio_error": null,
+ "audio_inputs": 0, "audio_outputs": 0,
+ "wakeword_engine": true, "secret_store": true,
+ "data_dir": "...\\release\\AI-Classroom-Live\\data"}
+```
+
+Cierra tres cosas que en Linux no podían comprobarse:
+
+- **P-3 queda verificado**: `audio_library: true` significa que PortAudio viaja
+  dentro del paquete en Windows. Cero dispositivos es lo normal en un runner y
+  ya no hace fallar el build, porque se distingue de que falte la biblioteca.
+- **P-1 y P-2 quedan verificados**: el ejecutable arranca congelado y resuelve
+  `data/` dentro de la carpeta portable, no en `runtime/`.
+- `wakeword_engine` y `secret_store` confirman que openWakeWord y el módulo
+  nativo de cifrado sobreviven al empaquetado.
+
+Carpeta resultante: 206 MB, 661 archivos con suma de verificación, 88 MB
+comprimida. La compilación de Tauri en Windows tarda unos 6 minutos y medio.
+
+Sigue sin comprobarse lo que necesita un equipo del instituto: abrir un
+micrófono de verdad, hablar con la API y la reacción del antivirus del centro.
+
 ## Riesgos: estado
 
 Todos los riesgos abiertos de la versión anterior se han atacado. Lo que queda

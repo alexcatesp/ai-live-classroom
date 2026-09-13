@@ -15,7 +15,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from .. import __version__
 from ..audio.devices import probe_devices
@@ -40,6 +41,23 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 TOKEN_HEADER = "X-AIClassroom-Token"
+
+# The window is not served from this backend: Tauri serves the built page from
+# its own origin and the page then calls http://127.0.0.1:<port>, which the
+# browser treats as cross-origin. Without these headers every request fails the
+# preflight and the application cannot talk to itself at all.
+#
+# The origins Tauri uses differ by platform and by whether it is a development
+# run: tauri://localhost on Linux and macOS, http://tauri.localhost on Windows,
+# and the Vite server during development. Anything else is refused -- a page
+# the teacher happens to visit has no business reaching this API, even though
+# it would also need the session token.
+ALLOWED_ORIGIN_PATTERN = (
+    r"^(tauri://localhost"
+    r"|https?://tauri\.localhost"
+    r"|https?://localhost(:\d+)?"
+    r"|https?://127\.0\.0\.1(:\d+)?)$"
+)
 
 
 @dataclass
@@ -122,6 +140,14 @@ def create_app(context: AppContext) -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=ALLOWED_ORIGIN_PATTERN,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=[TOKEN_HEADER, "Content-Type"],
+        max_age=600,
+    )
+
     app.state.context = context
     app.state.hub = hub
 
@@ -223,14 +249,24 @@ def create_app(context: AppContext) -> FastAPI:
         context.store.save(body)
         return settings_payload(body)
 
-    @app.post("/api/settings/api-key", dependencies=guarded, status_code=204)
-    async def put_api_key(body: ApiKeyIn) -> None:
+    # response_class matters here: FastAPI would otherwise label the empty 204
+    # as application/json, and a 204 carrying content headers makes Chromium
+    # abort the response. The write succeeds and the interface still reports a
+    # failure, which is a confusing way to save a key.
+    @app.post(
+        "/api/settings/api-key",
+        dependencies=guarded,
+        status_code=204,
+        response_class=Response,
+    )
+    async def put_api_key(body: ApiKeyIn) -> Response:
         try:
             context.store.set_api_key(body.api_key, passphrase=body.passphrase)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - DPAPI can refuse
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return Response(status_code=204)
 
     @app.post("/api/settings/unlock", dependencies=guarded, response_model=SettingsOut)
     async def unlock(body: UnlockIn) -> SettingsOut:
@@ -241,9 +277,15 @@ def create_app(context: AppContext) -> FastAPI:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         return settings_payload()
 
-    @app.delete("/api/settings/api-key", dependencies=guarded, status_code=204)
-    async def delete_api_key() -> None:
+    @app.delete(
+        "/api/settings/api-key",
+        dependencies=guarded,
+        status_code=204,
+        response_class=Response,
+    )
+    async def delete_api_key() -> Response:
         context.store.clear_api_key()
+        return Response(status_code=204)
 
     # -- diagnostics ------------------------------------------------------
 

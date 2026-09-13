@@ -342,3 +342,78 @@ def test_the_selftest_checks_the_things_that_only_break_once_packaged():
     available, engine_detail = wakeword_engine_available()
     assert isinstance(available, bool)
     assert engine_detail
+
+
+# -- cross-origin access from the webview ---------------------------------
+#
+# The window is served by Tauri from its own origin, so every call to the
+# backend is cross-origin. TestClient never sends a preflight, which is exactly
+# why this went unnoticed until the interface was driven in a real browser:
+# without these headers the application cannot talk to itself at all.
+
+
+def preflight(client, origin: str):
+    return client.options(
+        "/api/state",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": TOKEN_HEADER,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "tauri://localhost",       # Linux and macOS
+        "http://tauri.localhost",  # Windows
+        "https://tauri.localhost",
+        "http://localhost:1420",   # npm run dev
+        "http://127.0.0.1:1420",
+    ],
+)
+def test_the_webview_is_allowed_through(client, origin):
+    response = preflight(client, origin)
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert TOKEN_HEADER.lower() in response.headers["access-control-allow-headers"].lower()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["https://ejemplo.com", "http://malicioso.localhost.attacker.com", "null"],
+)
+def test_any_other_page_is_refused(client, origin):
+    """A page the teacher happens to have open has no business here."""
+    response = preflight(client, origin)
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_an_allowed_origin_gets_the_header_on_a_real_request(client):
+    response = client.get("/api/state", headers={"Origin": "http://tauri.localhost"})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://tauri.localhost"
+
+
+@pytest.mark.parametrize(
+    ("method", "call"),
+    [
+        ("POST", lambda c: c.post("/api/settings/api-key", json={"api_key": "sk-x"})),
+        ("DELETE", lambda c: c.delete("/api/settings/api-key")),
+    ],
+)
+def test_an_empty_response_carries_no_body_headers(client, method, call):
+    """A 204 with a content type makes Chromium abort the response.
+
+    The write still lands, so the interface reports a failure for something
+    that actually worked -- found by driving the real browser, not by any test
+    client, which is why this one asserts the headers directly.
+    """
+    response = call(client)
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert "content-type" not in {name.lower() for name in response.headers}

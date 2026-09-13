@@ -48,6 +48,20 @@ Cada pieza —motor de audio, detector, cliente de IA— está detrás de una in
 con su doble de prueba, que es lo que permite ejecutar toda la suite en Linux
 sin tarjeta de sonido.
 
+## Validar la Fase 0
+
+Un script comprueba de una vez todo lo que puede comprobarse sin un PC del
+instituto: las suites, el ejecutable empaquetado, el detector sobre voz real y
+la carpeta portable completa con sus sumas de verificación.
+
+```bash
+./scripts/validate-phase0.sh
+```
+
+Termina diciendo qué queda fuera de su alcance: abrir un micrófono de verdad,
+hablar con la API, ejecutar el `.exe` en Windows y medir falsos positivos con
+una clase grabada.
+
 ## Desarrollo
 
 Requisitos en la máquina de desarrollo (no en el equipo del aula): Python 3.11+,
@@ -120,13 +134,28 @@ no depende de la red para arrancar el detector.
 **2. El modelo de la frase «Oye Chat»**, que se entrena una vez:
 
 ```bash
-python -m venv .venv-train
-.venv-train/bin/pip install "openwakeword[training]"
-python scripts/train_wakeword.py --phrase "Oye Chat" --output data/models
+sudo apt-get install espeak-ng     # las voces con las que se entrena
+python scripts/train_wakeword.py --phrase "Oye Chat" --models data/models
 ```
 
-El entrenamiento arrastra torch y un modelo de síntesis de voz, así que vive
-fuera de la aplicación y fuera del CI.
+Tarda unos minutos. Sintetiza la frase en más de cien voces, la mezcla con
+ruido, ganancia y una reflexión de sala, y entrena el clasificador que
+openWakeWord pone encima de su extractor de características. Los negativos son
+frases de clase, casi-aciertos («oye», «chat», «choque») y habla variada, con
+una segunda ronda que reentrena sobre los negativos que el modelo falla.
+
+**Ese modelo aprende a reconocer voces sintéticas.** Sirve para levantar la
+cadena entera y comprobar que funciona; no para llevarlo a un aula. Antes de
+usarlo de verdad, añade grabaciones de personas reales:
+
+```bash
+python scripts/train_wakeword.py --phrase "Oye Chat" \
+    --extra-positives grabaciones/frase \
+    --extra-negatives grabaciones/aula
+```
+
+Treinta segundos de unas pocas voces reales valen más que mil clips
+sintéticos.
 
 ## Estructura
 

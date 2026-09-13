@@ -258,7 +258,40 @@ Esto alimenta el riesgo R-4: cuando en la Fase 2 entre el modelo de embeddings
 local (D-08), la carpeta crecerá todavía más. Conviene medir el tiempo de copia
 a un USB antes de darla por buena. El CI imprime el tamaño en cada build.
 
-### P-6 — Tauri no compila sin el sidecar
+### P-6 — CORS: la aplicación no podía hablar consigo misma
+
+Al ejecutar la pila entera por primera vez —backend empaquetado, interfaz
+compilada, Chromium— **todas** las llamadas a la API fallaron. La ventana la
+sirve Tauri desde su propio origen (`http://tauri.localhost` en Windows,
+`tauri://localhost` en Linux y macOS) y la página llama a
+`http://127.0.0.1:<puerto>`, que para el navegador es otro origen. Sin
+cabeceras CORS, el *preflight* se rechaza y no pasa ni una petición.
+
+Ningún test lo detectó porque `TestClient` de FastAPI no hace *preflight*: sus
+peticiones no son de navegador. La aplicación habría llegado al instituto con
+una ventana que abre, se queda en «Conectando con el motor local…» y no hace
+absolutamente nada.
+
+Resuelto con `CORSMiddleware` restringido por expresión regular a los orígenes
+de Tauri y de desarrollo —cualquier página que el profesor tenga abierta no
+pinta nada aquí— y con tests que comprueban el *preflight* aceptado y
+rechazado.
+
+Lección: lo que solo se prueba con dobles no está probado. Por eso existe ahora
+`scripts/validate-phase0.sh`.
+
+### P-7 — Un 204 con cabeceras de cuerpo
+
+FastAPI etiquetaba las respuestas vacías (guardar y borrar la clave) como
+`content-type: application/json`. Un 204 no lleva cuerpo, y Chromium aborta la
+respuesta cuando la ve anunciar uno.
+
+Corregido con `response_class=Response`. Investigado hasta el final: el
+`fetch` de la página resuelve `{ok: true, status: 204}`, así que el aborto que
+reportaba el navegador era ruido interno por un cuerpo vacío sin leer y no
+llegaba a la interfaz. Aun así el 204 estaba mal formado y ahora no lo está.
+
+### P-8 — Tauri no compila sin el sidecar
 
 `tauri::generate_context!` exige que exista `binaries/aiclassroom-backend-<triple>`,
 de modo que el shell no se puede compilar sin haber empaquetado antes el

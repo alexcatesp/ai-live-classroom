@@ -102,6 +102,50 @@ describe("DiagnosticsPanel", () => {
     expect(screen.getByText("No comprobado")).toBeInTheDocument();
   });
 
+  it("se pliega y despliega como un acordeón", async () => {
+    render(<DiagnosticsPanel report={report()} running={false} error={null} onRun={() => {}} />);
+    const toggle = screen.getByRole("button", { name: "Diagnóstico" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Micrófono")).not.toBeVisible();
+    // Folded, it still says whether the equipment passed.
+    expect(screen.getByText("Equipo listo")).toBeInTheDocument();
+
+    await userEvent.click(toggle);
+    expect(screen.getByText("Micrófono")).toBeVisible();
+  });
+
+  it("se despliega al comprobar, para enseñar el resultado", async () => {
+    const onRun = vi.fn();
+    render(<DiagnosticsPanel report={report()} running={false} error={null} onRun={onRun} />);
+    const toggle = screen.getByRole("button", { name: "Diagnóstico" });
+    await userEvent.click(toggle);
+
+    await userEvent.click(screen.getByRole("button", { name: "Comprobar equipo" }));
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(onRun).toHaveBeenCalledOnce();
+  });
+
+  it("nunca deja plegado un resultado que impide empezar", async () => {
+    const { rerender } = render(
+      <DiagnosticsPanel report={report()} running={false} error={null} onRun={() => {}} />,
+    );
+    const toggle = screen.getByRole("button", { name: "Diagnóstico" });
+    await userEvent.click(toggle);
+
+    rerender(
+      <DiagnosticsPanel
+        report={report({ ready_to_start: false, status: "failed" })}
+        running={false}
+        error={null}
+        onRun={() => {}}
+      />,
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("shows an error from the backend itself", () => {
     render(
       <DiagnosticsPanel

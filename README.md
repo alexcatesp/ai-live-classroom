@@ -63,8 +63,10 @@ sin tarjeta de sonido.
    firmado — ver [`docs/antivirus.md`](docs/antivirus.md).
 4. En **Configuración**, introduce la clave de la API y elige micrófono y
    altavoces.
-5. Pulsa **Comprobar equipo** y resuelve lo que salga en rojo.
-6. **Preparar sesión** → **Iniciar clase**, y di «Oye Chat». El estado debe
+5. Pulsa **Comprobar equipo** (primer panel) y resuelve lo que salga en rojo.
+   Cuando todo esté bien puedes plegar el panel con la flecha; se vuelve a
+   abrir solo si una comprobación impide empezar.
+6. En el panel de estado, **Preparar sesión** → **Iniciar clase**, y di «Oye Chat». El estado debe
    pasar a *Activado* y el medidor moverse.
 
    Si no se activa, mira el panel **Palabra de activación** de arriba abajo. La
@@ -138,7 +140,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 86 tests
+npm run test                            # 90 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

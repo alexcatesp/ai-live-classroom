@@ -222,32 +222,33 @@ export function App() {
         <p className="muted">Fase 0 · diagnóstico y palabra de activación</p>
       </header>
 
-      <StatePanel snapshot={snapshot} connected={connected} />
-
-      {controlError && (
-        <p className="warning-line" role="alert">
-          {controlError}
-        </p>
-      )}
-
-      <ClassControls
-        state={snapshot?.state ?? null}
-        busy={controlBusy}
-        readyToStart={report?.ready_to_start ?? false}
-        onPrepare={control((backend) => backend.prepareClass())}
-        onStart={control((backend) => backend.startClass())}
-        onPause={control((backend) => backend.pauseClass())}
-        onResume={control((backend) => backend.resumeClass())}
-        onStop={control((backend) => backend.stopClass())}
-        onRecover={control((backend) => backend.recover())}
-      />
-
+      {/* In the order a class happens: check the equipment, run the class,
+          watch the detector. */}
       <DiagnosticsPanel
         report={report}
         running={runningDiagnostics}
         error={diagnosticsError}
         onRun={() => void runDiagnostics()}
       />
+
+      <StatePanel snapshot={snapshot} connected={connected}>
+        {controlError && (
+          <p className="warning-line" role="alert">
+            {controlError}
+          </p>
+        )}
+        <ClassControls
+          state={snapshot?.state ?? null}
+          busy={controlBusy}
+          readyToStart={report?.ready_to_start ?? false}
+          onPrepare={control((backend) => backend.prepareClass())}
+          onStart={control((backend) => backend.startClass())}
+          onPause={control((backend) => backend.pauseClass())}
+          onResume={control((backend) => backend.resumeClass())}
+          onStop={control((backend) => backend.stopClass())}
+          onRecover={control((backend) => backend.recover())}
+        />
+      </StatePanel>
 
       <WakeWordMeter status={listening} />
 

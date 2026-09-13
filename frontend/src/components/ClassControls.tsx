@@ -33,7 +33,7 @@ export function ClassControls({
   const running = CLASS_IS_RUNNING.has(state);
 
   return (
-    <section className="panel controls" aria-label="Control de la clase">
+    <div className="controls" role="group" aria-label="Control de la clase">
       {state === "ERROR" && (
         <button type="button" onClick={onRecover} disabled={busy}>
           Reintentar
@@ -75,6 +75,6 @@ export function ClassControls({
           Finalizar clase
         </button>
       )}
-    </section>
+    </div>
   );
 }

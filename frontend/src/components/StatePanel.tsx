@@ -1,14 +1,18 @@
 /** The state indicator (spec section 6.1): always visible, never guessed. */
 
+import type { ReactNode } from "react";
+
 import { STATE_PRESENTATION } from "../lib/states";
 import type { StateSnapshot } from "../lib/types";
 
 interface Props {
   snapshot: StateSnapshot | null;
   connected: boolean;
+  /** The class controls, kept beside the state they change. */
+  children?: ReactNode;
 }
 
-export function StatePanel({ snapshot, connected }: Props) {
+export function StatePanel({ snapshot, connected, children }: Props) {
   if (!snapshot) {
     return (
       <section className="panel state-panel" aria-label="Estado de la sesión">
@@ -41,6 +45,8 @@ export function StatePanel({ snapshot, connected }: Props) {
           Sin conexión con el motor local. Reintentando…
         </p>
       )}
+
+      {children && <div className="state-controls">{children}</div>}
     </section>
   );
 }

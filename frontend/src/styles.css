@@ -67,6 +67,45 @@ body {
 
 .panel-header h2 {
   margin: 0;
+  margin-right: auto;
+}
+
+/* -- accordion ------------------------------------------------------------ */
+
+.panel-header:has(+ [hidden]) {
+  margin-bottom: 0;
+}
+
+.accordion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.accordion-toggle:focus-visible {
+  outline: 2px solid var(--tone-active);
+  outline-offset: 2px;
+}
+
+.chevron {
+  color: var(--muted);
+  transition: transform 150ms ease;
+}
+
+.accordion-toggle[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+.state-controls {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 
 .muted {

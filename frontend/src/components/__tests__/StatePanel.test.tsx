@@ -42,6 +42,16 @@ describe("StatePanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Sin conexión");
   });
 
+  it("muestra los controles de la clase dentro del propio panel de estado", () => {
+    render(
+      <StatePanel snapshot={snapshot("READY", false)} connected>
+        <button type="button">Iniciar clase</button>
+      </StatePanel>,
+    );
+    const panel = screen.getByRole("region", { name: "Estado de la sesión" });
+    expect(panel).toContainElement(screen.getByRole("button", { name: "Iniciar clase" }));
+  });
+
   it("says it is connecting before the first snapshot arrives", () => {
     render(<StatePanel snapshot={null} connected={false} />);
     expect(screen.getByText(/Conectando con el motor local/)).toBeInTheDocument();

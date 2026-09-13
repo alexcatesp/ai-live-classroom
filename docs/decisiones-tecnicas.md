@@ -598,6 +598,54 @@ Tres medidas:
 Sigue sin comprobarse en un equipo real del instituto, y esa prueba conviene
 hacerla con antelación, no el día de la clase.
 
+### R-8 — Python 3.13 rechaza los certificados de inspección HTTPS mal formados — *abierto, sin impacto hoy*
+
+**Qué pasó.** Al pasar el diagnóstico con el backend en desarrollo, sobre
+Python 3.13, «Certificados TLS» falló con *Basic Constraints of CA cert not
+marked critical*. En ese PC, Avast Web/Mail Shield inspecciona el HTTPS: sustituye
+el certificado de `api.openai.com` por uno emitido por su propia raíz, y esa raíz
+no marca la extensión *basicConstraints* como crítica.
+
+**Por qué.** Desde Python 3.13, `ssl.create_default_context()` activa
+`VERIFY_X509_STRICT`, que exige que los certificados cumplan RFC 5280. Hasta la
+3.12 esa comprobación no existe, y la cadena se aceptaba. Muchas raíces de
+antivirus y de proxies corporativos no cumplen la norma.
+
+**Situación actual.** La carpeta portable se construye con **Python 3.11**
+(fijado en `ci.yml`), así que la aplicación que se distribuye no se ve
+afectada. En el mismo PC, el ejecutable empaquetado dio el diagnóstico en verde.
+
+**Qué supondría actualizar a 3.13 sin hacer nada.**
+
+- En cualquier equipo con un antivirus o proxy así, «Certificados TLS» sale en
+  rojo, la clave y la conexión Realtime no se comprueban y **la clase no puede
+  empezar**.
+- No afecta solo al diagnóstico: el cliente Realtime usa el mismo contexto por
+  defecto, así que en la Fase 1 el asistente **no podría conectar**.
+- En un instituto es probable: filtrado de contenidos con inspección HTTPS, o
+  antivirus de consumo en portátiles del profesorado.
+
+**Por qué no basta con fijar 3.11 para siempre.** Python 3.11 deja de recibir
+parches de seguridad en octubre de 2027. Actualizar llegará.
+
+**Mitigaciones, para decidir entonces.**
+
+1. Crear el contexto TLS en un único sitio, compartido por diagnóstico y cliente
+   Realtime, y desactivar solo `VERIFY_X509_STRICT`. Se mantienen la validación
+   de la cadena y del nombre del servidor; se renuncia a la comprobación de
+   conformidad que 3.13 añadió. Es lo que hacía Python hasta la 3.12.
+2. Mantener el comportamiento estricto y pedir al administrador que excluya la
+   aplicación de la inspección HTTPS. Es más limpio, pero depende de terceros
+   en cada centro.
+3. En cualquier caso, mejorar el mensaje del diagnóstico: hoy atribuye el fallo
+   a «la red del centro», y puede ser el antivirus del propio equipo. El emisor
+   del certificado dice cuál de los dos es.
+
+**Consecuencia para el desarrollo.** Quien trabaje con Python 3.13 en un PC con
+un antivirus así verá el diagnóstico en rojo en local, sin que la aplicación
+empaquetada tenga el problema. Conviene desarrollar con 3.11, la versión que se
+distribuye.
+
 ---
 
 ## Problemas y riesgos abiertos
@@ -611,6 +659,7 @@ hacerla con antelación, no el día de la clase.
 | R-5 | La clave no viaja con la carpeta | Resuelto (contraseña opcional) | — |
 | R-6 | El asistente puede oírse a sí mismo | Mitigado con guarda de eco | AEC real llega con WebRTC |
 | R-7 | Antivirus y ejecutable sin firmar | Firma opcional + sumas + guía | Probar en un equipo del centro |
+| R-8 | Python 3.13 rechaza certificados de inspección mal formados | Sin impacto: se distribuye con 3.11 | Decidir la mitigación antes de actualizar Python |
 
 Lo único que queda pendiente son dos medidas que solo pueden tomarse en el
 instituto, y una prueba de antivirus. Ninguna es trabajo de diseño.

@@ -127,7 +127,9 @@ una clase grabada.
 
 ## Desarrollo
 
-Requisitos en la máquina de desarrollo (no en el equipo del aula): Python 3.11+,
+Requisitos en la máquina de desarrollo (no en el equipo del aula): Python 3.11
+(la versión que se distribuye; con 3.13 el diagnóstico TLS puede fallar en local
+tras un antivirus que inspeccione HTTPS, ver R-8),
 Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 
 ```bash

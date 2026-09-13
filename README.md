@@ -22,6 +22,10 @@ permisos de administrador.
 La conexión con la API Realtime se verifica, pero no se conversa: el diagnóstico
 abre la sesión, confirma la clave y el modelo, y la cierra (D-03).
 
+La especificación completa está en
+[`docs/especificacion-tecnica.md`](docs/especificacion-tecnica.md); el código la
+cita por apartado («spec §14», «spec section 7»).
+
 ## Arquitectura
 
 ```
@@ -209,7 +213,7 @@ backend/     motor local en Python: audio, detector, diagnóstico, estados
 frontend/    interfaz React + TypeScript
 src-tauri/   contenedor de escritorio en Rust
 scripts/     construcción portable y entrenamiento del detector
-docs/        especificación y registro de decisiones técnicas
+docs/        especificación, decisiones técnicas y guía de antivirus
 ```
 
 ## Privacidad

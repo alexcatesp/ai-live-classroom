@@ -1,7 +1,7 @@
 # Decisiones técnicas — AI Classroom Live
 
 Registro de decisiones (spec §24: "Registrar decisiones técnicas y problemas encontrados").
-Fuente: `AI_Classroom_Live_Especificacion_Tecnica.docx`, versión 1.0.
+Fuente: [`especificacion-tecnica.md`](especificacion-tecnica.md), versión 1.0.
 
 Cada decisión indica su estado. Las marcadas como **abierta** deben revisarse tras
 probar en un PC real del instituto.

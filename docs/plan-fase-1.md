@@ -212,8 +212,8 @@ audio fuera de la ventana activación → fin de turno.
 - **Adelantado de H4:** «Oye Chat» durante la respuesta y el botón **Parar**
   cancelan la respuesta, envían `conversation.item.truncate` con los
   milisegundos realmente oídos y vuelven a escuchar.
-  - Falta la otra mitad de H4: que la frase que interrumpe abra directamente la
-    nueva pregunta.
+  - La otra mitad, que la frase que interrumpe abra directamente la nueva
+    pregunta, se completó en H4.
 - **Interfaz:** en el panel de estado se ven la conexión con la IA, la pregunta
   y la respuesta en texto según llegan, el motivo de un fallo y el botón
   **Parar**, visible solo mientras hay respuesta.
@@ -234,6 +234,38 @@ audio fuera de la ventana activación → fin de turno.
 
 **Terminado cuando** se cumple «El usuario puede interrumpir la respuesta»
 (§21), con altavoces y no solo con auriculares (prueba de §22).
+
+**Estado (13/09/2026): implementado, pendiente de probar con altavoces.**
+
+- **Por qué no se podía interrumpir con la voz (P-16).** En la prueba real de
+  H3, «Oye Chat» no cortaba la respuesta. El micrófono no estaba cerrado: la
+  guarda de eco sumaba 0,15 al umbral y, con la sensibilidad en 0,1 (umbral
+  0,89), exigía 1,04, una puntuación imposible. Ahora la guarda nunca pide más
+  de 0,95 (`ECHO_GUARD_CEILING`), ni menos que el umbral normal.
+- **La frase que interrumpe abre la pregunta nueva.** La máquina de estados
+  distingue la causa: `WAKE_WORD_DETECTED` sobre *Pensando* o *Hablando* lleva a
+  `INTERRUPTED → ACTIVATED → CAPTURING_REQUEST`; `INTERRUPT` (botón **Parar**)
+  lleva a `INTERRUPTED → PASSIVE_LISTENING`. Mientras suena la respuesta, los
+  frames vuelven al preroll, así que la pregunta nueva conserva sus primeras
+  palabras.
+- **Restos de la respuesta cancelada.** La API confirma la cancelación con un
+  `response.done` «cancelled» que llega cuando ya se captura la pregunta nueva;
+  antes la habría abortado. El turno recuerda su `response_id` e ignora los
+  eventos de respuestas canceladas, y el error `response_cancel_not_active` no
+  tumba el turno.
+- **El indicador dice la verdad:** *Pensando*, *Respondiendo* e *Interrumpido*
+  muestran el micrófono abierto, porque lo está (spec §19). Qué sale del equipo
+  no cambia: nada desde el final de la pregunta.
+- **Medida para ajustar en el aula:** el panel de la palabra de activación
+  muestra el umbral mientras responde y el pico de puntuación oído durante las
+  respuestas.
+- Tests: la guarda a sensibilidad 0,1 deja pasar 0,96 y descarta 0,92; la frase
+  sobre la respuesta cancela, trunca, captura la pregunta nueva (con lo dicho
+  sobre la respuesta) y la contesta sin `TURN_FAILED`; **Parar** solo vuelve a
+  escuchar y no envía nada más.
+
+Pendiente de medir con altavoces reales: el pico que alcanza «Oye Chat» sobre
+la voz del asistente, y si 0,95 como techo deja pasar el eco.
 
 ### H5 — Personalidad y panel de transcripción
 

@@ -41,6 +41,25 @@ logger = logging.getLogger(__name__)
 # still gets through. Tune it with scripts/measure_wakeword.py.
 DEFAULT_ECHO_GUARD_MARGIN = 0.15
 
+# The most the guard may ask of a detection. Scores never exceed 1, so without
+# a ceiling a low sensitivity plus the margin demanded the impossible: at
+# sensitivity 0.1 the threshold is 0.89 and 0.89 + 0.15 made "Oye Chat" unable
+# to cut any answer (found in the first real test of H3). A clear phrase from
+# the room scores above this; the echo of the assistant's voice rarely does.
+ECHO_GUARD_CEILING = 0.95
+
+
+def echo_guarded_threshold(threshold: float, margin: float) -> float:
+    """What a detection must score while the assistant is speaking.
+
+    Never below the normal threshold, and never above the ceiling unless the
+    normal threshold already is -- the guard raises the bar, it never makes the
+    phrase unreachable.
+    """
+    if margin <= 0:
+        return threshold
+    return max(threshold, min(threshold + margin, ECHO_GUARD_CEILING))
+
 # The microphone level meter spans this range. Below -60 dBFS is a silent room
 # on any laptop microphone; 0 dBFS is clipping.
 LEVEL_FLOOR_DB = -60.0
@@ -73,6 +92,10 @@ class ListenerStats:
     frames_processed: int = 0
     interruptions: int = 0
     echo_suppressions: int = 0
+    #: Highest detector score heard while an answer was playing. If "Oye Chat"
+    #: fails to cut answers, this says by how much it missed the guarded
+    #: threshold, which is what tuning the margin needs.
+    peak_score_while_speaking: float = 0.0
     started_at: datetime | None = None
     last_activation_at: datetime | None = None
     detections: list[Detection] = field(default_factory=list)
@@ -119,6 +142,14 @@ class WakeWordListener:
     def is_listening(self) -> bool:
         return self._engine.is_capturing
 
+    @property
+    def guarded_threshold(self) -> float | None:
+        """The score "Oye Chat" needs while an answer plays (None without a threshold)."""
+        threshold = getattr(self._detector, "threshold", None)
+        if threshold is None:
+            return None
+        return echo_guarded_threshold(threshold, self._echo_guard_margin)
+
     def start(self) -> None:
         """Open the microphone. The caller owns the state transition."""
         with self._lock:
@@ -146,19 +177,25 @@ class WakeWordListener:
             except Exception:  # noqa: BLE001 - an observer must not kill capture
                 logger.exception("Un observador de audio falló.")
         detection = self._detector.process(frame)
+        playing = self._engine.is_playing
+        if playing:
+            scores = self._detector.recent_scores()
+            if scores:
+                self.stats.peak_score_while_speaking = max(
+                    self.stats.peak_score_while_speaking, scores[-1]
+                )
         if detection is None:
             return
-        if self._suppressed_as_echo(detection):
+        if playing and self._suppressed_as_echo(detection):
             return
         self._handle_detection(detection)
 
     def _suppressed_as_echo(self, detection: Detection) -> bool:
-        """Whether this detection is probably the assistant hearing itself."""
-        if self._echo_guard_margin <= 0 or not self._engine.is_playing:
+        """Whether this detection, heard during playback, is probably the assistant itself."""
+        if self._echo_guard_margin <= 0:
             return False
 
-        threshold = getattr(self._detector, "threshold", 0.0)
-        if detection.score >= threshold + self._echo_guard_margin:
+        if detection.score >= (self.guarded_threshold or 0.0):
             # Loud and clear enough to be somebody in the room, not the echo.
             return False
 
@@ -171,11 +208,14 @@ class WakeWordListener:
     def _handle_detection(self, detection: Detection) -> None:
         state = self._machine.state
         if state in (State.SPEAKING, State.THINKING):
-            # Somebody spoke over the assistant: cancel the response at once
-            # (spec section 6.2) rather than queueing a second activation.
+            # Somebody spoke over the assistant: silence the answer at once
+            # (spec section 6.2). The wake word itself is the event, so whoever
+            # runs the turn knows a new question follows (plan-fase-1, H4),
+            # which the stop button's INTERRUPT does not bring.
             self._engine.stop_playback()
             if self._machine.try_dispatch(
-                Event.INTERRUPT, reason=f"Nueva intervención ({detection.score:.2f})"
+                Event.WAKE_WORD_DETECTED,
+                reason=f"'{detection.phrase}' sobre la respuesta ({detection.score:.2f})",
             ):
                 self.stats.interruptions += 1
             return

@@ -56,6 +56,10 @@ class ListeningStatus:
     input_level: float = 0.0
     #: Silero's speech probability, or None when the voice filter is off.
     speech_probability: float | None = None
+    #: The score "Oye Chat" needs while an answer plays (echo guard, R-6).
+    guarded_threshold: float | None = None
+    #: Highest detector score heard while an answer was playing.
+    peak_score_while_speaking: float = 0.0
 
 
 def _speech_probability(detector: WakeWordDetector | None) -> float | None:
@@ -248,6 +252,8 @@ class SessionController:
             confirmation_frames=getattr(detector, "confirmation_frames", None),
             input_level=stats.input_level if stats else 0.0,
             speech_probability=_speech_probability(detector),
+            guarded_threshold=listener.guarded_threshold if listener is not None else None,
+            peak_score_while_speaking=stats.peak_score_while_speaking if stats else 0.0,
         )
 
     def _notify_detection(self, detection: Detection) -> None:

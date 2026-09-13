@@ -120,6 +120,22 @@ export function WakeWordMeter({ status, children }: Props) {
           <dt>Ecos descartados</dt>
           <dd>{status.echo_suppressions}</dd>
         </div>
+        {/*
+          Whether "Oye Chat" can cut an answer: what it needs while the
+          assistant speaks, next to the best it has scored over an answer.
+        */}
+        {status.guarded_threshold !== null && status.guarded_threshold !== threshold && (
+          <div>
+            <dt>Umbral mientras responde</dt>
+            <dd>{status.guarded_threshold.toFixed(2)}</dd>
+          </div>
+        )}
+        {status.peak_score_while_speaking > 0 && (
+          <div>
+            <dt>Pico mientras respondía</dt>
+            <dd>{status.peak_score_while_speaking.toFixed(2)}</dd>
+          </div>
+        )}
         <div>
           <dt>Escuchando</dt>
           <dd>{Math.round(status.seconds_listening)} s</dd>

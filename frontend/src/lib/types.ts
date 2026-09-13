@@ -109,6 +109,10 @@ export interface ListeningStatus {
   input_level: number;
   /** Silero's speech probability, or null when the voice filter is off. */
   speech_probability: number | null;
+  /** The score "Oye Chat" needs while an answer plays (echo guard, R-6). */
+  guarded_threshold: number | null;
+  /** Highest detector score heard while an answer was playing. */
+  peak_score_while_speaking: number;
 }
 
 export type TakeKind = "phrase" | "near_miss" | "speech";

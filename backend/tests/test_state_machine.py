@@ -65,6 +65,29 @@ def test_thinking_can_also_be_interrupted(machine):
     assert machine.dispatch(Event.INTERRUPT).target is State.INTERRUPTED
 
 
+def test_the_wake_word_over_an_answer_leads_into_a_new_question(machine):
+    """H4: "Oye Chat" cuts the answer and opens the next question."""
+    drive(
+        machine,
+        Event.CREATE_SESSION,
+        Event.SESSION_PREPARED,
+        Event.START_CLASS,
+        Event.WAKE_WORD_DETECTED,
+        Event.CAPTURE_STARTED,
+        Event.REQUEST_CAPTURED,
+        Event.RESPONSE_STARTED,
+    )
+    assert machine.dispatch(Event.WAKE_WORD_DETECTED).target is State.INTERRUPTED
+    assert machine.dispatch(Event.WAKE_WORD_DETECTED).target is State.ACTIVATED
+    assert machine.dispatch(Event.CAPTURE_STARTED).target is State.CAPTURING_REQUEST
+
+
+def test_the_microphone_stays_open_while_the_assistant_answers():
+    """So "Oye Chat" can cut the answer, and the indicator must say so (spec 19)."""
+    for state in (State.THINKING, State.SPEAKING, State.INTERRUPTED):
+        assert SessionStateMachine(initial=state).is_microphone_active is True
+
+
 @pytest.mark.parametrize(
     "state",
     [state for state in State if state not in MIC_ACTIVE_STATES],

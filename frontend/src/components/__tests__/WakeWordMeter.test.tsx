@@ -19,6 +19,8 @@ function status(overrides: Partial<ListeningStatus> = {}): ListeningStatus {
     confirmation_frames: 2,
     input_level: 0.6,
     speech_probability: 0.9,
+    guarded_threshold: 0.8,
+    peak_score_while_speaking: 0,
     ...overrides,
   };
 }
@@ -122,5 +124,12 @@ describe("WakeWordMeter, micrófono", () => {
   it("no avisa nada más empezar, antes de que llegue audio", () => {
     render(<WakeWordMeter status={status({ input_level: 0, seconds_listening: 1 })} />);
     expect(screen.queryByText(/No llega sonido/)).not.toBeInTheDocument();
+  });
+  it("muestra lo que necesita «Oye Chat» mientras responde y lo mejor que ha oído", () => {
+    render(
+      <WakeWordMeter status={status({ guarded_threshold: 0.95, peak_score_while_speaking: 0.91 })} />,
+    );
+    expect(screen.getByText("Umbral mientras responde").nextSibling).toHaveTextContent("0.95");
+    expect(screen.getByText("Pico mientras respondía").nextSibling).toHaveTextContent("0.91");
   });
 });

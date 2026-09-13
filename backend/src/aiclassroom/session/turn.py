@@ -9,6 +9,15 @@ finally walks through them:
         --first sound of the answer--> SPEAKING
         --the answer has played--> PASSIVE_LISTENING
 
+and cutting an answer (H4):
+
+    THINKING | SPEAKING --"Oye Chat"--> INTERRUPTED --> ACTIVATED --> CAPTURING_REQUEST
+    THINKING | SPEAKING --"Parar"-----> INTERRUPTED --> PASSIVE_LISTENING
+
+Either way the answer stops sounding, is cancelled, and the API is told how
+much of it was actually heard. The phrase goes on to capture what was said
+after it; the button only stops.
+
 Privacy decides where the microphone's audio may go (spec section 14):
 
 * During passive listening, frames only feed a **local pre-roll** of half a
@@ -17,7 +26,8 @@ Privacy decides where the microphone's audio may go (spec section 14):
   to the API -- starting with that pre-roll, so "Oye Chat, ¿qué...?" said in
   one breath keeps its first words.
 * From the end of the question on, nothing is sent. The microphone stays open
-  only so "Oye Chat" can still interrupt, which is local.
+  only so "Oye Chat" can still interrupt, which is local; the frames go back to
+  the pre-roll, so the question after an interruption keeps its first words too.
 
 The pre-roll has a consequence worth stating: it nearly always holds the tail
 of "Oye Chat" itself, so the server hears speech the moment a turn opens. If
@@ -127,6 +137,11 @@ class TurnController:
         self._response_finished = False
         self._watcher: asyncio.Task | None = None
         self._answer_item_id: str | None = None
+        # The response the current turn is waiting for. A cancelled answer
+        # keeps sending events for a moment -- its last audio, and response.done
+        # with status "cancelled" -- which must not be taken for the next one.
+        self._response_id: str | None = None
+        self._cancelled_responses: set[str] = set()
         self._unsubscribe_machine: Callable[[], None] | None = None
         self.current: TurnRecord | None = None
         self.last: TurnRecord | None = None
@@ -239,6 +254,7 @@ class TurnController:
         self._question_ended_at = None
         self._answer_samples = 0
         self._answer_item_id = None
+        self._response_id = None
         self._response_finished = False
         session.clear_audio()
 
@@ -285,6 +301,9 @@ class TurnController:
         state = self._controller.machine.state
         record = self.current
 
+        if self._is_stale(event):
+            return
+
         if isinstance(event, ConnectionChanged):
             self._notify("connection", state=event.state.value, reason=event.reason)
             # Only a turn that had actually begun was lost; an activation still
@@ -308,6 +327,10 @@ class TurnController:
         elif isinstance(event, events.InputTranscript) and record is not None:
             record.question = event.text if event.final else record.question + event.text
             self._notify("question", text=record.question, final=event.final)
+
+        elif isinstance(event, events.ResponseStarted) and record is not None:
+            if state in (State.THINKING, State.SPEAKING) and event.response_id:
+                self._response_id = event.response_id
 
         elif isinstance(event, events.AudioDelta) and record is not None:
             if state not in (State.THINKING, State.SPEAKING):
@@ -343,7 +366,18 @@ class TurnController:
                 self._dispatch(Event.RESPONSE_FINISHED, "Respuesta sin audio")
 
         elif isinstance(event, events.ApiError) and state in _TURN_STATES:
+            if event.code in _HARMLESS_ERRORS:
+                return  # e.g. a cancel that crossed the answer's own end
             self._abort_turn(f"La API devolvió un error: {event.message}")
+
+    def _is_stale(self, event: events.ServerEvent) -> bool:
+        """Whether this event belongs to an answer that is no longer wanted."""
+        response_id = getattr(event, "response_id", None)
+        if response_id is None:
+            return False
+        if response_id in self._cancelled_responses:
+            return True
+        return self._response_id is not None and response_id != self._response_id
 
     def _open_stream(self) -> bool:
         engine = self._controller.engine
@@ -377,23 +411,31 @@ class TurnController:
         loop = self._loop
         if transition.target in (State.PAUSED, State.STOPPED, State.ERROR, State.INTERRUPTED):
             if loop is not None and not loop.is_closed():
-                loop.call_soon_threadsafe(self._on_turn_cut, transition.target)
+                loop.call_soon_threadsafe(self._on_turn_cut, transition)
 
-    def _on_turn_cut(self, target: State) -> None:
-        if self.current is None and self._stream is None and not self._streaming:
-            if target is State.INTERRUPTED:
-                self._dispatch(Event.INTERRUPTION_HANDLED)
+    def _on_turn_cut(self, transition: Transition) -> None:
+        target = transition.target
+        interrupted = target is State.INTERRUPTED
+        if self.current is not None or self._stream is not None or self._streaming:
+            if self._session is not None:
+                self._session.cancel_response()
+                self._truncate_heard()
+                self._session.end_turn()
+            if self._response_id is not None:
+                self._cancelled_responses.add(self._response_id)
+            self._response_id = None
+            self._stop_streaming()
+            self._stop_playback()
+            self._cancel_timers()
+            self._finish_record("interrumpida" if interrupted else "cortada")
+        if not interrupted or self._controller.machine.state is not State.INTERRUPTED:
             return
-        if self._session is not None:
-            self._session.cancel_response()
-            self._truncate_heard()
-            self._session.end_turn()
-        self._stop_streaming()
-        self._stop_playback()
-        self._cancel_timers()
-        self._finish_record("interrumpida" if target is State.INTERRUPTED else "cortada")
-        if target is State.INTERRUPTED:
-            # H4 will go on to capture the new question; for now, listen again.
+        if transition.event is Event.WAKE_WORD_DETECTED:
+            # "Oye Chat" over the answer: what follows the phrase is the next
+            # question (plan-fase-1, H4). The pre-roll already holds its start.
+            if self._dispatch(Event.WAKE_WORD_DETECTED, "Nueva pregunta tras la interrupción"):
+                self._begin_turn()
+        else:
             self._dispatch(Event.INTERRUPTION_HANDLED, "Interrupción atendida")
 
     def _truncate_heard(self) -> None:
@@ -413,6 +455,9 @@ class TurnController:
         if self._session is not None:
             self._session.cancel_response()
             self._session.end_turn()
+        if self._response_id is not None:
+            self._cancelled_responses.add(self._response_id)
+            self._response_id = None
         if self.current is not None:
             self._finish_record("fallida")
         if reason:
@@ -465,3 +510,7 @@ class TurnController:
 
 
 _TURN_STATES = {State.ACTIVATED, State.CAPTURING_REQUEST, State.THINKING, State.SPEAKING}
+
+# Errors that say nothing about the turn in progress: cancelling an answer that
+# had just finished on its own, or had not started yet.
+_HARMLESS_ERRORS = {"response_cancel_not_active"}

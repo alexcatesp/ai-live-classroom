@@ -238,7 +238,7 @@ async def test_pausing_mid_answer_silences_it_and_cancels_it(keyed_store):
 
 
 async def test_oye_chat_during_an_answer_cuts_it_and_says_how_much_was_heard(keyed_store):
-    """The start of H4: the interruption cancels, truncates and listens again."""
+    """H4: the interruption cancels the answer and truncates it to what was heard."""
     scores = [FIRE] + [0.0] * 16 + [0.0] * 5 + [FIRE]
     async with FakeRealtimeServer(Script(audio_chunks=40, chunk_delay=0.02)) as server:
         lesson = Class(keyed_store, server, scores=scores)
@@ -251,13 +251,93 @@ async def test_oye_chat_during_an_answer_cuts_it_and_says_how_much_was_heard(key
             lesson.stream.advance(500)
 
             lesson.engine.feed(speech(6))  # "Oye Chat" over the answer
-            await wait_until(lambda: lesson.machine.state is State.PASSIVE_LISTENING)
+            await wait_until(lambda: server.all_events("conversation.item.truncate"))
 
             assert State.INTERRUPTED in lesson.states()
             assert server.all_events("response.cancel")
             truncated = server.all_events("conversation.item.truncate")
-            assert truncated and truncated[-1]["item_id"] == "asst_0"
+            assert truncated[-1]["item_id"] == "asst_0"
             assert 0 < truncated[-1]["audio_end_ms"] <= 600
+            assert lesson.turns.last.outcome == "interrumpida"
+        finally:
+            await lesson.stop()
+
+
+async def test_the_phrase_that_interrupts_opens_the_next_question(keyed_store):
+    """H4: "Oye Chat, ¿y ...?" over an answer is answered as a question of its own.
+
+    The cancelled answer still sends its response.done ("cancelled") after the
+    new question has begun; it must not be taken for the new turn failing.
+    """
+    scores = [FIRE] + [0.0] * 16 + [0.0] * 5 + [FIRE]
+    async with FakeRealtimeServer(Script(audio_chunks=40, chunk_delay=0.02)) as server:
+        lesson = Class(keyed_store, server, scores=scores)
+        await lesson.start()
+        try:
+            await lesson.say_wake_phrase()
+            lesson.ask(frames=16)
+            await wait_until(lambda: lesson.machine.state is State.SPEAKING)
+            await wait_until(lambda: lesson.stream.buffer.queued > 24_000)
+            sent_before = len(lesson.appended())
+
+            lesson.engine.feed(speech(6, value=555))  # "Oye Chat, ¿y..." over the answer
+            await wait_until(lambda: lesson.machine.state is State.CAPTURING_REQUEST)
+            await wait_until(lambda: len(lesson.appended()) > sent_before)
+
+            # The words said over the answer travel with the new question.
+            resumed = lesson.appended()[sent_before]
+            first = np.frombuffer(base64.b64decode(resumed["audio"]), dtype="<i2")
+            assert (first == 555).any()
+
+            lesson.ask(frames=16)
+            await wait_until(lambda: lesson.machine.state is State.SPEAKING)
+            await wait_until(
+                lambda: lesson.stream is not None
+                and lesson.stream.buffer.queued > 0
+                and server.all_events("input_audio_buffer.append")
+            )
+            await wait_until(lambda: lesson.turns._response_finished, timeout=5)
+            lesson.stream.play_out()
+            await wait_until(lambda: lesson.machine.state is State.PASSIVE_LISTENING)
+
+            assert not any(t.event is Event.TURN_FAILED for t in lesson.machine.history)
+            states = lesson.states()
+            cut = states.index(State.INTERRUPTED)
+            assert states[cut : cut + 6] == [
+                State.INTERRUPTED,
+                State.ACTIVATED,
+                State.CAPTURING_REQUEST,
+                State.THINKING,
+                State.SPEAKING,
+                State.PASSIVE_LISTENING,
+            ]
+            assert lesson.turns.last.outcome == "completada"
+        finally:
+            await lesson.stop()
+
+
+async def test_the_stop_button_cuts_the_answer_and_only_listens_again(keyed_store):
+    """H4: unlike the phrase, the button opens no question and sends nothing more."""
+    async with FakeRealtimeServer(Script(audio_chunks=40, chunk_delay=0.02)) as server:
+        lesson = Class(keyed_store, server, scores=[FIRE])
+        await lesson.start()
+        try:
+            await lesson.say_wake_phrase()
+            lesson.ask(frames=16)
+            await wait_until(lambda: lesson.machine.state is State.SPEAKING)
+            stream = lesson.stream
+
+            lesson.engine.stop_playback()  # what POST /api/turn/stop does
+            lesson.machine.dispatch(Event.INTERRUPT, reason="Parada manual")
+            await wait_until(lambda: lesson.machine.state is State.PASSIVE_LISTENING)
+
+            assert not stream.is_active
+            assert server.all_events("response.cancel")
+            assert lesson.turns.last.outcome == "interrumpida"
+            sent = len(lesson.appended())
+            lesson.engine.feed(speech(20))
+            await asyncio.sleep(0.2)
+            assert len(lesson.appended()) == sent
         finally:
             await lesson.stop()
 

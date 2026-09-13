@@ -204,6 +204,82 @@ def test_suppressions_are_counted_so_the_margin_can_be_tuned(
     assert listener.stats.frames_processed == 3
 
 
+def test_the_guard_never_makes_the_phrase_unreachable(engine: FakeAudioEngine, frames):
+    """Found in the first real test of H3: at sensitivity 0.1 the threshold is
+    0.89, and 0.89 + 0.15 asked for a score no detector produces. Nobody could
+    cut an answer with their voice."""
+    from aiclassroom.audio.listener import ECHO_GUARD_CEILING
+
+    machine = speaking_machine()
+    detector = ScriptedWakeWordDetector([0.96], sensitivity=0.1)
+    listener = WakeWordListener(engine, detector, machine)
+    listener.start()
+    engine.playing = True
+
+    assert detector.threshold + 0.15 > 1.0
+    assert listener.guarded_threshold == ECHO_GUARD_CEILING
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.INTERRUPTED
+    assert listener.stats.interruptions == 1
+
+
+def test_the_guard_still_raises_the_bar_at_a_low_sensitivity(
+    engine: FakeAudioEngine, frames
+):
+    machine = speaking_machine()
+    listener = WakeWordListener(
+        engine, ScriptedWakeWordDetector([0.92], sensitivity=0.1), machine
+    )
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(1))
+
+    assert machine.state is State.SPEAKING
+    assert listener.stats.echo_suppressions == 1
+
+
+def test_the_guarded_threshold_is_never_below_the_normal_one():
+    from aiclassroom.audio.listener import echo_guarded_threshold
+
+    assert echo_guarded_threshold(0.65, 0.15) == 0.80
+    assert echo_guarded_threshold(0.89, 0.15) == 0.95
+    assert echo_guarded_threshold(0.95, 0.15) == 0.95
+    assert echo_guarded_threshold(0.65, 0.0) == 0.65
+
+
+def test_the_phrase_over_an_answer_is_reported_as_the_wake_word(
+    engine: FakeAudioEngine, frames
+):
+    """So whoever runs the turn can tell it from the stop button (H4)."""
+    machine = speaking_machine()
+    listener = WakeWordListener(engine, ScriptedWakeWordDetector([0.95]), machine)
+    listener.start()
+    engine.playing = True
+
+    engine.feed(frames(1))
+
+    assert machine.history[-1].event is Event.WAKE_WORD_DETECTED
+    assert machine.history[-1].target is State.INTERRUPTED
+
+
+def test_the_highest_score_heard_during_an_answer_is_kept(engine: FakeAudioEngine, frames):
+    """If the phrase fails to cut an answer, this says by how much it missed."""
+    machine = speaking_machine()
+    listener = WakeWordListener(
+        engine, ScriptedWakeWordDetector([0.3, 0.6, 0.2, 0.0, 0.99], sensitivity=0.0), machine
+    )
+    listener.start()
+    engine.playing = True
+    engine.feed(frames(4))
+    engine.playing = False
+    engine.feed(frames(1))  # louder, but nothing was playing
+
+    assert listener.stats.peak_score_while_speaking == 0.6
+
+
 # -- the microphone level meter --------------------------------------------
 
 

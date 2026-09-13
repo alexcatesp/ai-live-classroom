@@ -66,11 +66,21 @@ class Event(StrEnum):
     RESET = "RESET"
 
 
-# The microphone is open only while the assistant is listening for the wake
-# word or capturing a request. Every other state -- including ERROR, PAUSED and
-# STOPPED -- must show the microphone as closed (spec section 19).
+# The microphone is open for the whole of a running class: while it waits for
+# the wake word, while it captures a question, and while it thinks and answers,
+# because "Oye Chat" must be able to cut an answer (plan-fase-1, H4). What
+# leaves the machine is a separate matter, decided in session/turn.py. Every
+# other state -- including ERROR, PAUSED and STOPPED -- must show the
+# microphone as closed (spec section 19).
 MIC_ACTIVE_STATES: frozenset[State] = frozenset(
-    {State.PASSIVE_LISTENING, State.ACTIVATED, State.CAPTURING_REQUEST}
+    {
+        State.PASSIVE_LISTENING,
+        State.ACTIVATED,
+        State.CAPTURING_REQUEST,
+        State.THINKING,
+        State.SPEAKING,
+        State.INTERRUPTED,
+    }
 )
 
 # States from which the class can be paused or stopped: anything that happens
@@ -102,9 +112,15 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.THINKING, Event.RESPONSE_FINISHED): State.PASSIVE_LISTENING,
     # A new intervention cancels the response (spec section 6.2). Thinking can be
     # cancelled too: the teacher may move on before the first audio arrives.
+    # INTERRUPT is the stop button: the answer is cut and the class listens again.
     (State.SPEAKING, Event.INTERRUPT): State.INTERRUPTED,
     (State.THINKING, Event.INTERRUPT): State.INTERRUPTED,
     (State.INTERRUPTED, Event.INTERRUPTION_HANDLED): State.PASSIVE_LISTENING,
+    # "Oye Chat" over an answer cuts it too, but the phrase opens a new question,
+    # so the transition keeps its cause and leads straight into the activation.
+    (State.SPEAKING, Event.WAKE_WORD_DETECTED): State.INTERRUPTED,
+    (State.THINKING, Event.WAKE_WORD_DETECTED): State.INTERRUPTED,
+    (State.INTERRUPTED, Event.WAKE_WORD_DETECTED): State.ACTIVATED,
     (State.PAUSED, Event.RESUME): State.PASSIVE_LISTENING,
     (State.STOPPED, Event.RESET): State.IDLE,
     (State.ERROR, Event.RECOVER): State.READY,

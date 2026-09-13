@@ -34,7 +34,14 @@ describe("state presentation", () => {
   it("marks the microphone open only where the backend does", () => {
     // Must match MIC_ACTIVE_STATES in backend/src/aiclassroom/session/state.py.
     const open = ALL_STATES.filter((state) => STATE_PRESENTATION[state].microphoneOpen);
-    expect(open.sort()).toEqual(["ACTIVATED", "CAPTURING_REQUEST", "PASSIVE_LISTENING"]);
+    expect(open.sort()).toEqual([
+      "ACTIVATED",
+      "CAPTURING_REQUEST",
+      "INTERRUPTED",
+      "PASSIVE_LISTENING",
+      "SPEAKING",
+      "THINKING",
+    ]);
   });
 
   it("never shows an error or a pause as listening", () => {

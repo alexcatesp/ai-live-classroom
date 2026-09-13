@@ -7,7 +7,7 @@ permisos de administrador.
 
 > **Estado: Fase 1 (MVP) en desarrollo.** La Fase 0 está terminada:
 > diagnóstico, palabra de activación y carpeta portable. Ya hay conversación
-> hablada con «Oye Chat» (hitos H1 a H3 de
+> hablada con «Oye Chat», que se puede interrumpir con la voz (hitos H1 a H4 de
 > [`docs/plan-fase-1.md`](docs/plan-fase-1.md)). Faltan los materiales, la
 > personalidad, el registro de sesiones y la validación en el aula. Ver
 > [`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md).
@@ -109,7 +109,13 @@ pasiva.
 
 - En el panel de estado ves la pregunta y la respuesta en texto, y si la
   conexión con la IA está disponible.
-- Para cortar una respuesta, di «Oye Chat» o pulsa **Parar**.
+- Para cortar una respuesta, di «Oye Chat» o pulsa **Parar**. Con la frase,
+  lo que digas a continuación es la pregunta nueva: «Oye Chat, ¿y en CSS?»
+  corta la respuesta y se contesta. **Parar** solo corta y vuelve a escuchar.
+- Mientras responde, el micrófono sigue abierto, pero solo en local para oír
+  «Oye Chat». Si la frase no corta la respuesta, mira en el panel **Palabra de
+  activación** el **Umbral mientras responde** frente al **Pico mientras
+  respondía**: el pico es lo mejor que ha puntuado tu voz sobre los altavoces.
 - Al iniciar la clase se abre la conexión con la API. Sin clave guardada, la
   clase no empieza y dice por qué. Sin red, la clase empieza igualmente, escucha
   y avisa en cada activación mientras reintenta.

@@ -162,6 +162,8 @@ class ListeningOut(BaseModel):
     confirmation_frames: int | None
     input_level: float
     speech_probability: float | None
+    guarded_threshold: float | None
+    peak_score_while_speaking: float
 
     @classmethod
     def of(cls, status: ListeningStatus) -> ListeningOut:

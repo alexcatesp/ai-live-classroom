@@ -58,21 +58,23 @@ export const STATE_PRESENTATION: Record<SessionState, StatePresentation> = {
   },
   THINKING: {
     label: "Pensando",
-    description: "Pregunta recibida. Preparando la respuesta.",
+    description:
+      "Pregunta recibida. Preparando la respuesta. El micrófono sigue abierto, solo para oír «Oye Chat».",
     tone: "busy",
-    microphoneOpen: false,
+    microphoneOpen: true,
   },
   SPEAKING: {
     label: "Respondiendo",
-    description: "Reproduciendo la respuesta. Di «Oye Chat» o pulsa «Parar» para cortarla.",
+    description:
+      "Reproduciendo la respuesta. Di «Oye Chat» y tu nueva pregunta, o pulsa «Parar», para cortarla.",
     tone: "busy",
-    microphoneOpen: false,
+    microphoneOpen: true,
   },
   INTERRUPTED: {
     label: "Interrumpido",
     description: "La respuesta se ha cancelado.",
     tone: "warning",
-    microphoneOpen: false,
+    microphoneOpen: true,
   },
   PAUSED: {
     label: "En pausa",

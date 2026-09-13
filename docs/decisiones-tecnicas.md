@@ -573,6 +573,27 @@ simulado se detiene cuando no queda nada que reproducir.
 Lección: un «apagado» del runner no siempre es la infraestructura. Si se repite
 en el mismo punto, es el código.
 
+### P-16 — «Oye Chat» no podía cortar una respuesta
+
+En la primera prueba real de H3, decir «Oye Chat» mientras hablaba el
+asistente no hacía nada.
+
+- Parecía que el micrófono se cerraba al responder, y el indicador lo
+  confirmaba: marcaba *Micrófono cerrado* en *Pensando* y *Respondiendo*.
+- En realidad la captura seguía abierta. El bloqueo era la guarda de eco
+  (R-6): sumaba 0,15 al umbral del detector. El profesor había bajado la
+  sensibilidad a 0,1 para evitar falsos positivos, con umbral 0,89, así que
+  durante la respuesta hacía falta 1,04. Las puntuaciones no pasan de 1.
+- Nadie podía interrumpir con la voz, y el contador de ecos descartados no lo
+  revelaba, porque la puntuación ni siquiera llegaba al umbral normal.
+
+Resuelto con un techo de 0,95 para lo que exige la guarda, sin bajar nunca del
+umbral normal. El indicador muestra el micrófono abierto mientras responde, y
+el panel muestra el umbral durante la respuesta y el pico oído sobre ella.
+
+Lección: dos ajustes razonables por separado pueden sumar un imposible. Un
+límite que depende de otro se comprueba en el extremo de ambos.
+
 ## Verificado en Windows real
 
 El CI construyó la carpeta portable por primera vez el 13/09/2026
@@ -738,6 +759,11 @@ spec §6.2. En su lugar hay una guarda que sube el listón durante la
 reproducción: una persona a un metro del micrófono suena más fuerte y más
 limpia que el retorno de los altavoces. Cada activación descartada se cuenta y
 se muestra, así que el margen se ajusta con datos.
+
+La guarda nunca pide más de 0,95 ni menos que el umbral normal. Sin ese techo,
+una sensibilidad baja volvía imposible interrumpir (P-16). El panel muestra el
+umbral durante la respuesta y el pico oído sobre ella, para ajustar el margen
+en el aula.
 
 La cancelación de eco de verdad llega si se adopta WebRTC (R-2), que la trae
 del navegador. Hasta entonces, la guarda es la mitigación, y se puede

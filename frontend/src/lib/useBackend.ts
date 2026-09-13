@@ -24,7 +24,17 @@ export function useBackendConnection(client: BackendClient | null): Connection {
 
   const refresh = useCallback(async () => {
     if (!client) return;
-    setSnapshot(await client.getState());
+    try {
+      setSnapshot(await client.getState());
+      setConnected(true);
+    } catch {
+      // Every caller fires this without awaiting, so an uncaught rejection
+      // here becomes an unhandled promise rejection in the running
+      // application. The socket's reconnect loop is what recovers from a
+      // backend that went away; this just stops shouting about it and leaves
+      // the last known state on screen.
+      setConnected(false);
+    }
   }, [client]);
 
   useEffect(() => {

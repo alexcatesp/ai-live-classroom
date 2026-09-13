@@ -12,6 +12,7 @@ frontend (spec section 4.2).
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import ssl
@@ -36,11 +37,15 @@ class HandshakeStatus(StrEnum):
 
 
 # Risk R-2: whether a WebSocket from the backend is fast enough, or whether
-# WebRTC from the frontend is needed. The handshake is not the whole answer --
-# a spoken turn adds the model's own latency -- but it is the part the school
-# network contributes, and it is the part that varies between classrooms.
-# Above this, the network is the problem worth investigating first.
-HANDSHAKE_WARNING_SECONDS = 1.5
+# WebRTC from the frontend is needed. The handshake is timed in two parts
+# because they answer different questions. The network part (DNS, TCP, TLS and
+# the upgrade) is what the school contributes and what varies between
+# classrooms; above this, the network is worth investigating first.
+NETWORK_WARNING_SECONDS = 1.5
+# The session part is OpenAI creating the session once the socket is open. It
+# depends on the service, not on the classroom, and is paid once per class, so
+# it gets a looser bar and a remedy that does not send anyone after the network.
+SESSION_WARNING_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -50,7 +55,11 @@ class HandshakeResult:
     session_id: str | None = None
     model: str | None = None
     remedy: str | None = None
-    #: Seconds from opening the connection to the session being confirmed.
+    #: Seconds until the WebSocket was open: DNS, TCP, TLS and the upgrade.
+    network_seconds: float | None = None
+    #: Seconds from the open socket to `session.created`: time spent at OpenAI.
+    session_seconds: float | None = None
+    #: Seconds for the whole check, including any phase that never finished.
     elapsed_seconds: float | None = None
 
     @property
@@ -58,11 +67,19 @@ class HandshakeResult:
         return self.status is HandshakeStatus.OK
 
     @property
-    def slow(self) -> bool:
+    def slow_network(self) -> bool:
         return (
             self.ok
-            and self.elapsed_seconds is not None
-            and self.elapsed_seconds > HANDSHAKE_WARNING_SECONDS
+            and self.network_seconds is not None
+            and self.network_seconds > NETWORK_WARNING_SECONDS
+        )
+
+    @property
+    def slow_session(self) -> bool:
+        return (
+            self.ok
+            and self.session_seconds is not None
+            and self.session_seconds > SESSION_WARNING_SECONDS
         )
 
 
@@ -85,12 +102,37 @@ class WebSocketRealtimeClient:
         self._url = url
         self._timeout = timeout
         self._ssl_context = ssl_context
+        # Set by the handshake as soon as the socket opens, so a timeout can
+        # still say whether the network or the service was the one waiting.
+        self._network_seconds: float | None = None
 
     async def check_connection(self, model: str) -> HandshakeResult:
+        # Loaded before the clock starts: in the packaged application the first
+        # import takes a noticeable fraction of a second, and it would otherwise
+        # be reported as network latency.
+        importlib.import_module("websockets")
+
+        self._network_seconds = None
         started = time.monotonic()
         try:
             result = await asyncio.wait_for(self._handshake(model), timeout=self._timeout)
         except TimeoutError:
+            elapsed = time.monotonic() - started
+            if self._network_seconds is not None:
+                # The socket opened, so the network did its part.
+                return HandshakeResult(
+                    status=HandshakeStatus.TIMEOUT,
+                    detail=(
+                        f"La conexión se abrió en {self._network_seconds:.2f} s, pero la API "
+                        f"no creó la sesión en {self._timeout:.0f} segundos."
+                    ),
+                    remedy=(
+                        "La red funciona; el retraso está en el servicio de OpenAI. "
+                        "Vuelve a comprobarlo en unos minutos."
+                    ),
+                    network_seconds=self._network_seconds,
+                    elapsed_seconds=elapsed,
+                )
             return HandshakeResult(
                 status=HandshakeStatus.TIMEOUT,
                 detail=f"La API no respondió en {self._timeout:.0f} segundos.",
@@ -98,11 +140,9 @@ class WebSocketRealtimeClient:
                     "Puede que la red del centro esté filtrando las conexiones WebSocket. "
                     "Consúltalo con el administrador del aula."
                 ),
-                elapsed_seconds=time.monotonic() - started,
+                elapsed_seconds=elapsed,
             )
 
-        # Measured here rather than inside the handshake so it covers everything
-        # the classroom network contributes: DNS, TCP, TLS and the upgrade.
         return replace(result, elapsed_seconds=time.monotonic() - started)
 
     async def _handshake(self, model: str) -> HandshakeResult:
@@ -115,9 +155,17 @@ class WebSocketRealtimeClient:
             kwargs = {"additional_headers": headers, "open_timeout": self._timeout}
             if self._ssl_context is not None:
                 kwargs["ssl"] = self._ssl_context
+            started = time.monotonic()
             async with websockets.connect(url, **kwargs) as connection:
+                opened = time.monotonic()
+                self._network_seconds = opened - started
                 raw = await connection.recv()
-                return self._interpret_first_event(raw, model)
+                result = self._interpret_first_event(raw, model)
+                return replace(
+                    result,
+                    network_seconds=self._network_seconds,
+                    session_seconds=time.monotonic() - opened,
+                )
         except InvalidStatus as exc:
             return self._interpret_http_status(exc, model)
         except (OSError, WebSocketException) as exc:

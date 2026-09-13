@@ -381,23 +381,36 @@ async def test_expiry_still_wins_over_a_recognised_issuer(monkeypatch):
 # -- latency surfaced in the report (risk R-2) ---------------------------
 
 
-async def test_the_handshake_time_reaches_the_teacher():
+async def test_the_handshake_time_reaches_the_teacher_in_two_parts():
+    stub = StubRealtimeClient(
+        HandshakeResult(
+            HandshakeStatus.OK, "Sesión establecida.",
+            network_seconds=0.42, session_seconds=1.17,
+        )
+    )
+    result = await check_realtime(stub, "gpt-realtime")
+
+    assert result.status is CheckStatus.OK
+    assert "Red" in result.detail and "0.42 s" in result.detail
+    assert "OpenAI" in result.detail and "1.17 s" in result.detail
+
+
+async def test_a_client_that_cannot_split_the_time_still_reports_it():
     stub = StubRealtimeClient(
         HandshakeResult(HandshakeStatus.OK, "Sesión establecida.", elapsed_seconds=0.42)
     )
     result = await check_realtime(stub, "gpt-realtime")
 
-    assert result.status is CheckStatus.OK
     assert "0.42 s" in result.detail
 
 
 async def test_a_slow_network_warns_without_blocking_the_class():
-    from aiclassroom.realtime.client import HANDSHAKE_WARNING_SECONDS
+    from aiclassroom.realtime.client import NETWORK_WARNING_SECONDS
 
     stub = StubRealtimeClient(
         HandshakeResult(
             HandshakeStatus.OK, "Sesión establecida.",
-            elapsed_seconds=HANDSHAKE_WARNING_SECONDS + 1.0,
+            network_seconds=NETWORK_WARNING_SECONDS + 1.0, session_seconds=0.5,
         )
     )
     result = await check_realtime(stub, "gpt-realtime")
@@ -405,3 +418,21 @@ async def test_a_slow_network_warns_without_blocking_the_class():
     assert result.status is CheckStatus.WARNING
     assert result.blocking is False
     assert "transporte" in result.remedy
+    assert "OpenAI" not in result.remedy
+
+
+async def test_a_slow_session_warns_without_blaming_the_network():
+    from aiclassroom.realtime.client import SESSION_WARNING_SECONDS
+
+    stub = StubRealtimeClient(
+        HandshakeResult(
+            HandshakeStatus.OK, "Sesión establecida.",
+            network_seconds=0.3, session_seconds=SESSION_WARNING_SECONDS + 0.5,
+        )
+    )
+    result = await check_realtime(stub, "gpt-realtime")
+
+    assert result.status is CheckStatus.WARNING
+    assert result.blocking is False
+    assert "OpenAI" in result.remedy
+    assert "transporte" not in result.remedy

@@ -8,7 +8,8 @@ import json
 import pytest
 
 from aiclassroom.realtime.client import (
-    HANDSHAKE_WARNING_SECONDS,
+    NETWORK_WARNING_SECONDS,
+    SESSION_WARNING_SECONDS,
     HandshakeResult,
     HandshakeStatus,
     StubRealtimeClient,
@@ -135,14 +136,84 @@ def test_a_timeout_still_reports_the_time_spent_waiting():
 
 
 @pytest.mark.parametrize(
-    ("elapsed", "expected_slow"),
-    [(0.2, False), (HANDSHAKE_WARNING_SECONDS + 0.1, True), (None, False)],
+    ("seconds", "expected_slow"),
+    [(0.2, False), (NETWORK_WARNING_SECONDS + 0.1, True), (None, False)],
 )
-def test_a_slow_handshake_is_flagged(elapsed, expected_slow):
-    result = HandshakeResult(HandshakeStatus.OK, "listo", elapsed_seconds=elapsed)
-    assert result.slow is expected_slow
+def test_a_slow_network_is_flagged(seconds, expected_slow):
+    result = HandshakeResult(HandshakeStatus.OK, "listo", network_seconds=seconds)
+    assert result.slow_network is expected_slow
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected_slow"),
+    [(NETWORK_WARNING_SECONDS + 0.1, False), (SESSION_WARNING_SECONDS + 0.1, True), (None, False)],
+)
+def test_a_slow_session_is_flagged_on_its_own_bar(seconds, expected_slow):
+    result = HandshakeResult(HandshakeStatus.OK, "listo", session_seconds=seconds)
+    assert result.slow_session is expected_slow
+
+
+def test_a_slow_session_does_not_blame_the_network():
+    """The case that prompted the split: a fast network behind a slow session."""
+    result = HandshakeResult(
+        HandshakeStatus.OK, "listo", network_seconds=0.3, session_seconds=3.4
+    )
+    assert result.slow_network is False
+    assert result.slow_session is True
 
 
 def test_a_failed_handshake_is_never_reported_as_merely_slow():
-    result = HandshakeResult(HandshakeStatus.INVALID_KEY, "no", elapsed_seconds=99.0)
-    assert result.slow is False
+    result = HandshakeResult(
+        HandshakeStatus.INVALID_KEY, "no", network_seconds=99.0, session_seconds=99.0
+    )
+    assert result.slow_network is False
+    assert result.slow_session is False
+
+
+def test_a_timeout_after_the_socket_opened_blames_the_service():
+    """If the network did its part, the remedy must not send anyone after it."""
+    subject = WebSocketRealtimeClient(api_key="sk-test", timeout=0.05)
+
+    async def opens_then_hangs(_model):
+        subject._network_seconds = 0.01
+        await asyncio.sleep(10)
+
+    subject._handshake = opens_then_hangs
+    result = asyncio.run(subject.check_connection("gpt-realtime"))
+
+    assert result.status is HandshakeStatus.TIMEOUT
+    assert result.network_seconds == 0.01
+    assert "openai" in result.remedy.lower()
+    assert "websocket" not in result.remedy.lower()
+
+
+class FakeConnection:
+    def __init__(self, delay: float) -> None:
+        self._delay = delay
+
+    async def __aenter__(self):
+        await asyncio.sleep(self._delay)
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+    async def recv(self):
+        await asyncio.sleep(self._delay * 2)
+        return json.dumps({"type": "session.created", "session": {"id": "s", "model": "m"}})
+
+
+def test_the_handshake_times_the_network_and_the_session_separately(monkeypatch):
+    import websockets
+
+    monkeypatch.setattr(websockets, "connect", lambda *_a, **_k: FakeConnection(0.05))
+    result = asyncio.run(client_with_time().check_connection("gpt-realtime"))
+
+    assert result.ok
+    assert 0.05 <= result.network_seconds < 0.1
+    assert 0.1 <= result.session_seconds < 0.2
+    assert result.elapsed_seconds >= result.network_seconds + result.session_seconds
+
+
+def client_with_time() -> WebSocketRealtimeClient:
+    return WebSocketRealtimeClient(api_key="sk-test", timeout=5.0)

@@ -20,7 +20,9 @@ from pathlib import Path
 from ..audio.devices import DeviceInventory
 from ..audio.wakeword import BASE_MODELS_SUBFOLDER, missing_base_models, model_filename
 from ..realtime.client import (
-    HANDSHAKE_WARNING_SECONDS,
+    NETWORK_WARNING_SECONDS,
+    SESSION_WARNING_SECONDS,
+    HandshakeResult,
     HandshakeStatus,
     RealtimeClient,
 )
@@ -388,31 +390,50 @@ async def check_api_key(api_key: str | None, base_url: str, timeout: float = 10.
 async def check_realtime(client: RealtimeClient, model: str) -> CheckResult:
     """D-03: open the Realtime session, confirm it, close it. No conversation.
 
-    The elapsed time is reported because risk R-2 -- WebSocket from the backend
-    versus WebRTC from the frontend -- is a question about latency, and this is
-    the first place a real number for it exists.
+    The time is reported because risk R-2 -- WebSocket from the backend versus
+    WebRTC from the frontend -- is a question about latency, and this is the
+    first place a real number for it exists. It is split in two because only
+    the network half is the school's; the session half is OpenAI's, and a
+    single number sent teachers after the wrong culprit.
     """
     label = "Conexión Realtime"
     result = await client.check_connection(model)
 
     if result.ok:
-        timing = (
-            f" Tiempo de establecimiento: {result.elapsed_seconds:.2f} s."
-            if result.elapsed_seconds is not None
-            else ""
-        )
-        if result.slow:
-            return CheckResult(
-                "realtime",
-                label,
-                CheckStatus.WARNING,
-                result.detail + timing,
-                f"La conexión tarda más de {HANDSHAKE_WARNING_SECONDS:.1f} s en establecerse. "
+        detail = result.detail + _realtime_timing(result)
+        remedies = []
+        if result.slow_network:
+            remedies.append(
+                f"La red tarda más de {NETWORK_WARNING_SECONDS:.1f} s en abrir la conexión. "
                 "La clase funcionará, pero las respuestas empezarán con retraso. "
-                "Anótalo: es la medida que decide si hace falta cambiar de transporte.",
+                "Anótalo: es la medida que decide si hace falta cambiar de transporte."
             )
-        return CheckResult("realtime", label, CheckStatus.OK, result.detail + timing)
+        if result.slow_session:
+            remedies.append(
+                f"OpenAI tarda más de {SESSION_WARNING_SECONDS:.1f} s en crear la sesión. "
+                "No depende de la red del aula y solo se paga una vez al empezar; "
+                "suele variar con la carga del servicio."
+            )
+        if remedies:
+            return CheckResult(
+                "realtime", label, CheckStatus.WARNING, detail, " ".join(remedies)
+            )
+        return CheckResult("realtime", label, CheckStatus.OK, detail)
     status = (
         CheckStatus.WARNING if result.status is HandshakeStatus.BLOCKED else CheckStatus.FAILED
     )
     return CheckResult("realtime", label, status, result.detail, result.remedy)
+
+
+def _realtime_timing(result: HandshakeResult) -> str:
+    parts = []
+    if result.network_seconds is not None:
+        parts.append(f"Red (DNS, TLS y WebSocket): {result.network_seconds:.2f} s")
+    if result.session_seconds is not None:
+        parts.append(f"creación de la sesión en OpenAI: {result.session_seconds:.2f} s")
+    if parts:
+        return " " + "; ".join(parts) + "."
+    # A client that could not split the time still reports the whole of it.
+    if result.elapsed_seconds is not None:
+        return f" Tiempo de establecimiento: {result.elapsed_seconds:.2f} s."
+    return ""

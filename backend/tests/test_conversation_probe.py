@@ -159,6 +159,28 @@ async def test_the_answer_plays_as_it_arrives(store, engine):
         assert not live.is_active
 
 
+async def test_an_answer_that_arrives_whole_before_anything_plays_still_plays_and_ends(
+    store, engine
+):
+    """The CI failure: a fast answer came and went before the speaker opened.
+
+    The stream then waited forever for an end it had missed. Every piece and
+    the end must reach the speaker however quickly they arrive.
+    """
+    store.set_api_key("sk-guardada")
+    async with FakeRealtimeServer(Script(audio_chunks=3)) as server:
+        probe = probe_for(store, server, engine)
+        await probe.start()
+        await asyncio.wait_for(probe.wait(), 10)
+
+        stream = engine.streams[0]
+        assert stream.buffer.queued > 0 or stream.buffer.consumed > 0
+        stream.play_out(limit_ms=5_000)
+        assert not stream.is_active  # it ended, rather than waiting forever
+        assert abs(stream.played_ms - 300) <= 5
+        assert probe.status()["playing"] is False
+
+
 async def test_the_answer_can_be_heard_again(store, engine):
     store.set_api_key("sk-guardada")
     async with FakeRealtimeServer() as server:

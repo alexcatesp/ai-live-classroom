@@ -166,6 +166,7 @@ class ConversationProbe:
         self.question_text = self.answer_text = ""
         self.playback_error = None
         self.stop_playback()
+        self._stream = None  # the next answer opens its own
         self._answer = []
         self._task = asyncio.create_task(self._run(api_key), name="conversation-probe")
 
@@ -207,6 +208,12 @@ class ConversationProbe:
                 marks.setdefault("first_audio", now)
                 self.state = ProbeState.ANSWERING
                 self._answer.append(event.pcm)
+                # Opened by the first piece itself, never by a separate step
+                # that could run after the answer has already arrived: that
+                # lost the start of a fast answer and left a stream waiting for
+                # an end that had come and gone.
+                if self._stream is None and self.playback_error is None:
+                    self._open_stream(settings)
                 if self._stream is not None:
                     self._stream.feed(event.pcm)  # heard as it arrives (H2)
             elif isinstance(event, events.OutputTranscript):
@@ -249,7 +256,6 @@ class ConversationProbe:
             engine.stop_capture()
             engine = None
             self.state = ProbeState.WAITING
-            self._open_stream(settings)
 
             try:
                 await asyncio.wait_for(response_done.wait(), self._answer_timeout)

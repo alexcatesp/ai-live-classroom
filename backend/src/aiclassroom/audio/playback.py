@@ -248,14 +248,23 @@ class FakePlaybackStream(_BufferedStream):
                 return
             self.heard.append(self._buffer.read(BLOCK_SAMPLES))
 
-    def play_out(self) -> None:
-        """Advance until everything queued has played, or the queue runs dry."""
-        while not self._buffer.done.is_set():
-            if self._buffer.queued == 0 and self._buffer.consumed:
+    def play_out(self, limit_ms: int = 600_000) -> None:
+        """Advance until everything queued has played.
+
+        Stops, rather than spinning, once nothing is left to play: a stream
+        that was never finished would otherwise play silence forever -- which
+        is exactly how a real bug once ate a CI runner's memory.
+        """
+        elapsed = 0
+        while not self._buffer.done.is_set() and elapsed < limit_ms:
+            if self._buffer.queued == 0 and (
+                self._buffer.consumed or self._buffer.stopped or elapsed > 1_000
+            ):
                 self.advance(10)  # one more block lets a finished stream end
-                if self._buffer.queued == 0:
-                    return
+                return
             self.advance(10)
+            elapsed += 10
+        self.heard = self.heard[-1_000:]  # keep memory bounded in long tests
 
     def stop(self) -> None:
         self.stopped_at_ms = self.played_ms

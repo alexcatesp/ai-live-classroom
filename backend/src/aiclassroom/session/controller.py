@@ -24,6 +24,11 @@ from .state import Event, InvalidTransition, SessionStateMachine, State
 
 logger = logging.getLogger(__name__)
 
+# Phase 0 has no conversation, so an activation has nothing to lead into. The
+# state is held this long -- enough for the interface to show "Activado" -- and
+# then returns to passive listening so the next "Oye Chat" can be heard.
+ACTIVATION_HOLD_SECONDS = 2.0
+
 EngineFactory = Callable[[Settings], AudioEngine]
 DetectorFactory = Callable[[Settings], WakeWordDetector]
 
@@ -76,8 +81,12 @@ class SessionController:
         machine: SessionStateMachine | None = None,
         engine_factory: EngineFactory | None = None,
         detector_factory: DetectorFactory | None = None,
+        activation_hold_seconds: float = ACTIVATION_HOLD_SECONDS,
     ) -> None:
         self.store = store
+        self._activation_hold_seconds = activation_hold_seconds
+        self._activation_timer: threading.Timer | None = None
+        self._timer_lock = threading.RLock()
         self.machine = machine or SessionStateMachine()
         self._engine_factory = engine_factory or _default_engine
         self._detector_factory = detector_factory or self._default_detector
@@ -153,6 +162,7 @@ class SessionController:
     def pause(self) -> State:
         with self._lock:
             self.machine.dispatch(Event.PAUSE, reason="Pausa solicitada")
+            self._cancel_activation_timer()
             # Close the microphone straight away: PAUSED must not keep listening.
             if self._listener is not None:
                 self._listener.stop()
@@ -192,6 +202,7 @@ class SessionController:
             return self.machine.state
 
     def _teardown(self) -> None:
+        self._cancel_activation_timer()
         if self._listener is not None:
             self._listener.stop()
         if self._engine is not None:
@@ -219,8 +230,40 @@ class SessionController:
         )
 
     def _notify_detection(self, detection: Detection) -> None:
+        self._schedule_activation_expiry()
         for subscriber in list(self.detection_subscribers):
             try:
                 subscriber(detection)
             except Exception:  # noqa: BLE001
                 logger.exception("Un suscriptor de activaciones falló.")
+
+    # -- phase 0: return to listening after an activation -----------------
+
+    def _schedule_activation_expiry(self) -> None:
+        """Called on the audio thread, so the wait happens on a timer thread.
+
+        Deliberately not under `self._lock`: stop() holds that lock while it
+        closes the stream, and closing waits for this very callback to return.
+        """
+        with self._timer_lock:
+            self._cancel_activation_timer()
+            timer = threading.Timer(self._activation_hold_seconds, self._expire_activation)
+            timer.daemon = True
+            self._activation_timer = timer
+            timer.start()
+
+    def _expire_activation(self) -> None:
+        with self._timer_lock:
+            self._activation_timer = None
+        # The machine has its own lock. Paused or stopped in the meantime means
+        # there is nothing to return to, which try_dispatch simply declines.
+        self.machine.try_dispatch(
+            Event.ACTIVATION_EXPIRED,
+            reason="Fase 0: sin conversación todavía, vuelve a escuchar",
+        )
+
+    def _cancel_activation_timer(self) -> None:
+        with self._timer_lock:
+            if self._activation_timer is not None:
+                self._activation_timer.cancel()
+                self._activation_timer = None

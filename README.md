@@ -82,8 +82,10 @@ que es con lo que se entrena en el CI: sirve para comprobar que todo funciona,
 no para fiarse de él en clase. Antes de usarlo de verdad, reentrénalo con
 grabaciones de personas reales (ver más abajo).
 
-En esta fase el asistente **no responde todavía**: se activa y vuelve a
-silencio. La conversación es la Fase 1.
+En esta fase el asistente **no responde todavía**: se activa, se queda dos
+segundos en *Activado* y vuelve a la escucha pasiva, listo para la siguiente
+vez. La conversación es la Fase 1, y con ella un panel con la transcripción de
+cada pregunta y su respuesta (D-11).
 
 ### En Linux o macOS, sin esperar al CI
 
@@ -130,7 +132,7 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 254 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 258 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend

@@ -173,6 +173,34 @@ pantalla, en español de España (spec §12).
 
 ---
 
+## D-11 — Transcripción visible de cada intervención (requisito de Fase 1)
+
+**Decisión.** La interfaz mostrará en un panel de texto la transcripción de cada
+intervención: lo que se pregunta **después** de «Oye Chat» y la respuesta del
+asistente, a medida que llegan.
+
+**Motivo.** Surgió en la primera prueba real: quien habla necesita saber qué ha
+entendido el asistente, sobre todo cuando responde algo inesperado. Permite
+además comprobar en clase si el fallo está en el reconocimiento de la pregunta
+o en la respuesta. La API Realtime devuelve el texto de la entrada y de la
+salida, así que no añade otro servicio.
+
+**Límites, por la spec §14.**
+
+- **Nada de escucha pasiva.** Lo que se dice en clase antes de «Oye Chat» no se
+  transcribe ni sale del equipo; el panel empieza con la activación.
+- **En pantalla no es en disco.** El panel muestra la conversación de la sesión
+  en curso. Guardarla sigue dependiendo de que el profesor lo active, y se
+  borra al cerrar si no lo ha hecho.
+- El panel debe poder ocultarse, porque el aula puede estar proyectando la
+  pantalla del profesor.
+
+**Consecuencia.** El cliente Realtime de Fase 1 debe pedir la transcripción de
+la entrada de audio y reenviar al frontend los eventos de texto de la entrada y
+la respuesta, además del audio.
+
+---
+
 ## Decisiones heredadas de la spec (§23), sin discusión
 
 - Aplicación de escritorio para Windows, no aplicación web.
@@ -386,6 +414,35 @@ desarrollo: el error pasa de la pantalla del profesor a la compilación.
 De paso, `build-portable.ps1` seguía copiando el backend a
 `src-tauri\binaries\` como sidecar, un resto de antes de P-10 que ya no usaba
 nadie.
+
+### P-12 — Sin forma de saber si el micrófono oía algo
+
+En la primera clase de prueba se dijo «Oye Chat» y no pasó nada. La única barra
+en pantalla era la puntuación del detector, que con el filtro de voz activo
+está a cero hasta que se reconoce la frase: igual para un micrófono mudo que
+para uno que oye pero no reconoce. La causa resultó ser el micrófono elegido.
+
+Resuelto con una barra de nivel del micrófono (dBFS de los últimos 0,5 s) y el
+indicador «Voz detectada» del filtro Silero, encima del detector. De arriba
+abajo, el panel responde en orden: ¿llega sonido?, ¿es voz?, ¿es la frase? Solo
+se guarda un número por frame, nunca el audio.
+
+### P-13 — La primera activación era también la última
+
+Con el micrófono correcto, «Oye Chat» activó el asistente una vez y nunca más.
+La máquina de estados no tenía salida de *Activado* salvo pausar o finalizar:
+en la spec la activación lleva a capturar la petición, y eso es Fase 1. Las
+detecciones siguientes llegaban en un estado que no las admite y se descartaban
+en silencio. El README llegaba a afirmar que «se activa y vuelve a silencio».
+
+Los tests no lo vieron porque todos comprobaban **una** activación y terminaban
+ahí.
+
+Resuelto con el evento `ACTIVATION_EXPIRED` (*Activado* → escucha pasiva). En
+Fase 0 el controlador lo lanza a los 2 s, para que la interfaz alcance a
+mostrar el estado; en Fase 1 será el tiempo de espera de quien dice la frase y
+luego nada. El temporizador no toma el cerrojo del controlador, porque se arma
+desde el hilo de audio y `stop()` espera a ese hilo con el cerrojo tomado.
 
 ## Verificado en Windows real
 

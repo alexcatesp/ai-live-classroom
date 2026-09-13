@@ -43,6 +43,10 @@ class Event(StrEnum):
     SESSION_PREPARED = "SESSION_PREPARED"
     START_CLASS = "START_CLASS"
     WAKE_WORD_DETECTED = "WAKE_WORD_DETECTED"
+    #: Activated, but no request followed. In Phase 0 that is every activation,
+    #: because there is no conversation yet; in Phase 1 it is the timeout for
+    #: someone who said the phrase and then nothing.
+    ACTIVATION_EXPIRED = "ACTIVATION_EXPIRED"
     CAPTURE_STARTED = "CAPTURE_STARTED"
     REQUEST_CAPTURED = "REQUEST_CAPTURED"
     RESPONSE_STARTED = "RESPONSE_STARTED"
@@ -80,6 +84,9 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.PREPARING, Event.SESSION_PREPARED): State.READY,
     (State.READY, Event.START_CLASS): State.PASSIVE_LISTENING,
     (State.PASSIVE_LISTENING, Event.WAKE_WORD_DETECTED): State.ACTIVATED,
+    # Without this, ACTIVATED had no way out but pause or stop: the first
+    # activation of a class was also the last one.
+    (State.ACTIVATED, Event.ACTIVATION_EXPIRED): State.PASSIVE_LISTENING,
     (State.ACTIVATED, Event.CAPTURE_STARTED): State.CAPTURING_REQUEST,
     (State.CAPTURING_REQUEST, Event.REQUEST_CAPTURED): State.THINKING,
     (State.THINKING, Event.RESPONSE_STARTED): State.SPEAKING,

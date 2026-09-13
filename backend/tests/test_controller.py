@@ -157,6 +157,102 @@ def test_listening_status_exposes_what_the_meter_needs(
     assert status.speech_probability is None
 
 
+def _wait_for(predicate, timeout: float = 2.0) -> bool:
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+def test_an_activation_returns_to_listening_so_the_next_one_is_heard(
+    store, machine, engine: FakeAudioEngine, frames
+):
+    """Reported from a real classroom: the first "Oye Chat" was also the last.
+
+    Phase 0 has no conversation, so nothing moved ACTIVATED onwards and every
+    later detection was discarded as arriving in the wrong state.
+    """
+    from aiclassroom.audio.wakeword import ScriptedWakeWordDetector
+
+    # Two activations, far enough apart to clear the refractory window.
+    scores = [0.9] + [0.0] * 40 + [0.9]
+    detector = ScriptedWakeWordDetector(scores=scores, refractory_seconds=0.5)
+    controller = SessionController(
+        store=store,
+        machine=machine,
+        engine_factory=lambda _settings: engine,
+        detector_factory=lambda _settings: detector,
+        activation_hold_seconds=0.05,
+    )
+    controller.prepare()
+    controller.start_class()
+
+    engine.feed(frames(1))
+    assert controller.machine.state is State.ACTIVATED
+    assert _wait_for(lambda: controller.machine.state is State.PASSIVE_LISTENING)
+
+    engine.feed(frames(41))
+    assert controller.listening_status().activations == 2
+
+
+def test_the_activation_is_held_long_enough_to_be_seen(
+    controller: SessionController, engine, frames
+):
+    controller.prepare()
+    controller.start_class()
+    engine.feed(frames(3))
+
+    # Default hold: the interface polls every half second and must catch it.
+    assert controller.machine.state is State.ACTIVATED
+    controller.stop()
+
+
+def test_pausing_during_an_activation_is_not_undone_by_the_timer(
+    store, machine, engine: FakeAudioEngine, detector, frames
+):
+    import time
+
+    controller = SessionController(
+        store=store,
+        machine=machine,
+        engine_factory=lambda _settings: engine,
+        detector_factory=lambda _settings: detector,
+        activation_hold_seconds=0.05,
+    )
+    controller.prepare()
+    controller.start_class()
+    engine.feed(frames(3))
+    controller.pause()
+
+    time.sleep(0.15)
+    assert controller.machine.state is State.PAUSED
+
+
+def test_stopping_during_an_activation_stays_stopped(
+    store, machine, engine: FakeAudioEngine, detector, frames
+):
+    import time
+
+    controller = SessionController(
+        store=store,
+        machine=machine,
+        engine_factory=lambda _settings: engine,
+        detector_factory=lambda _settings: detector,
+        activation_hold_seconds=0.05,
+    )
+    controller.prepare()
+    controller.start_class()
+    engine.feed(frames(3))
+    controller.stop()
+
+    time.sleep(0.15)
+    assert controller.machine.state is State.STOPPED
+
+
 def test_listening_status_before_any_class_is_empty(controller: SessionController):
     status = controller.listening_status()
     assert status.listening is False

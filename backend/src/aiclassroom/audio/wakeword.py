@@ -372,7 +372,19 @@ def create_detector(
     vad_threshold: float = DEFAULT_VAD_THRESHOLD,
     confirmation_frames: int = DEFAULT_CONFIRMATION_FRAMES,
 ) -> WakeWordDetector:
-    """Build the real detector for `phrase`, or explain why it is unavailable."""
+    """Build the real detector for `phrase`, or explain why it is unavailable.
+
+    Both file checks happen here, before the engine is touched, so a missing
+    model is reported as the missing file it is rather than as whatever the
+    library says when it is not installed.
+    """
+    phrase_model = models_dir / model_filename(phrase)
+    if not phrase_model.exists():
+        raise WakeWordUnavailable(
+            f"No se encontró el modelo de palabra clave en {phrase_model}. "
+            "Genéralo con scripts/train_wakeword.py y colócalo en data/models."
+        )
+
     missing = missing_base_models(models_dir)
     if missing:
         names = ", ".join(path.name for path in missing)

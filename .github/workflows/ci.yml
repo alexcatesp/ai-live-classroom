@@ -102,10 +102,56 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+  wakeword:
+    name: Modelo de la palabra de activación
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Training is deterministic given the script, so a rebuild only costs
+      # time when the recipe itself changes.
+      - name: Caché del modelo
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: data/models
+          key: >-
+            wakeword-${{ hashFiles('scripts/train_wakeword.py',
+            'scripts/fetch_wakeword_runtime.py') }}
+
+      - name: Dependencias
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng
+          python -m pip install --upgrade pip
+          pip install -e "./backend[wakeword]"
+
+      - name: Descargar el extractor de características
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: python scripts/fetch_wakeword_runtime.py --output data/models
+
+      # Trained on synthesized voices: enough to bring the chain up and try the
+      # application, not enough for a classroom. Retrain with recordings of
+      # real people before relying on it (see docs/decisiones-tecnicas.md, R-1).
+      - name: Entrenar el detector
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: python scripts/train_wakeword.py --phrase "Oye Chat" --models data/models
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wakeword-models
+          path: data/models
+          if-no-files-found: error
+
   portable:
     name: Carpeta portable para Windows
     runs-on: windows-latest
-    needs: [backend, frontend, shell]
+    needs: [backend, frontend, shell, wakeword]
     steps:
       - uses: actions/checkout@v4
 
@@ -158,10 +204,13 @@ jobs:
         working-directory: src-tauri
         run: cargo build --release
 
-      # Fetched here, on a machine with a working connection, so the classroom
-      # PC never has to download anything (D-04).
-      - name: Descargar los modelos base de openWakeWord
-        run: python scripts\fetch_wakeword_runtime.py --output release\AI-Classroom-Live\data\models
+      # Built by the Linux job, so the classroom PC never downloads or trains
+      # anything (D-04).
+      - name: Recoger los modelos del detector
+        uses: actions/download-artifact@v4
+        with:
+          name: wakeword-models
+          path: release\AI-Classroom-Live\data\models
 
       - name: Montar la carpeta portable
         run: |
@@ -178,7 +227,6 @@ jobs:
 
       # Runs the packaged backend from inside the portable layout, which is the
       # only place the data folder resolves the way the teacher will see it.
-      # Also needs openWakeWord: the download script imports it.
       - name: Comprobar la carpeta portable
         run: |
           $backend = "release\AI-Classroom-Live\runtime\backend\aiclassroom-backend.exe"
@@ -192,9 +240,12 @@ jobs:
           }
           if (-not $report.frozen) { throw "El ejecutable no está empaquetado." }
 
-          foreach ($model in @("melspectrogram.onnx", "embedding_model.onnx")) {
+          foreach ($model in @("melspectrogram.onnx", "embedding_model.onnx", "silero_vad.onnx")) {
             $path = "release\AI-Classroom-Live\data\models\openwakeword\$model"
             if (-not (Test-Path $path)) { throw "Falta el modelo base $model." }
+          }
+          if (-not (Test-Path "release\AI-Classroom-Live\data\models\oye_chat.onnx")) {
+            throw "Falta el modelo de la frase: la carpeta no detectaría nada."
           }
 
           $size = (Get-ChildItem "release\AI-Classroom-Live" -Recurse -File |

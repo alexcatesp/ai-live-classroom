@@ -48,6 +48,51 @@ Cada pieza —motor de audio, detector, cliente de IA— está detrás de una in
 con su doble de prueba, que es lo que permite ejecutar toda la suite en Linux
 sin tarjeta de sonido.
 
+## Probarlo
+
+### En un PC con Windows (lo que se lleva al aula)
+
+1. Abre la pestaña **Actions** del repositorio, entra en el último run verde de
+   *CI* y descarga el artefacto **`AI-Classroom-Live-portable`**.
+2. Descomprime donde quieras: escritorio, una carpeta del usuario o un USB.
+3. Ejecuta `AI-Classroom-Live.exe`. Windows avisará de que el programa no está
+   firmado — ver [`docs/antivirus.md`](docs/antivirus.md).
+4. En **Configuración**, introduce la clave de la API y elige micrófono y
+   altavoces.
+5. Pulsa **Comprobar equipo** y resuelve lo que salga en rojo.
+6. **Preparar sesión** → **Iniciar clase**, y di «Oye Chat». El estado debe
+   pasar a *Activado* y el medidor moverse.
+
+El artefacto incluye el detector ya entrenado. **Reconoce voces sintéticas**,
+que es con lo que se entrena en el CI: sirve para comprobar que todo funciona,
+no para fiarse de él en clase. Antes de usarlo de verdad, reentrénalo con
+grabaciones de personas reales (ver más abajo).
+
+En esta fase el asistente **no responde todavía**: se activa y vuelve a
+silencio. La conversación es la Fase 1.
+
+### En Linux o macOS, sin esperar al CI
+
+Dos terminales:
+
+```bash
+# 1. El motor local. Anuncia su puerto y su token por stdout.
+cd backend
+python -m venv .venv && .venv/bin/pip install -e ".[dev,wakeword]"
+.venv/bin/python ../scripts/fetch_wakeword_runtime.py --output ../data/models
+.venv/bin/python ../scripts/train_wakeword.py --models ../data/models   # unos minutos
+AICLASSROOM_DATA_DIR=../data .venv/bin/python -m aiclassroom.main --verbose
+```
+
+```bash
+# 2. La interfaz, con el puerto y el token que imprimió el backend.
+cd frontend && npm ci
+VITE_BACKEND_PORT=<puerto> VITE_BACKEND_TOKEN=<token> npm run dev
+```
+
+Abre `http://localhost:1420`. Necesitas `espeak-ng` para el entrenamiento
+(`apt-get install espeak-ng` o `brew install espeak-ng`).
+
 ## Validar la Fase 0
 
 Un script comprueba de una vez todo lo que puede comprobarse sin un PC del

@@ -29,6 +29,8 @@ class Script:
     samples_per_chunk: int = 2_400  # 100 ms at 24 kHz
     #: Seconds between audio chunks, so a cancel can land mid-answer.
     chunk_delay: float = 0.0
+    #: Seconds the "model" thinks before answering.
+    answer_delay: float = 0.0
     #: Reject the upgrade with this HTTP status.
     reject_status: int | None = None
     #: Reply to session.update with an error instead of session.updated.
@@ -40,6 +42,8 @@ class Connection:
     headers: dict
     path: str
     received: list[dict] = field(default_factory=list)
+    #: How many client events had arrived when the first answer audio went out.
+    received_before_answer: int | None = None
 
 
 class FakeRealtimeServer:
@@ -123,7 +127,7 @@ class FakeRealtimeServer:
                     buffered += len(base64.b64decode(event["audio"]))
                     if buffered >= self.script.speech_bytes and answering is None:
                         buffered = 0
-                        answering = asyncio.create_task(self._answer(send, turn))
+                        answering = asyncio.create_task(self._answer(send, turn, record))
                         turn += 1
 
                 elif kind == "response.cancel":
@@ -148,7 +152,7 @@ class FakeRealtimeServer:
                 answering.cancel()
             self._sockets.remove(socket)
 
-    async def _answer(self, send, turn: int) -> None:
+    async def _answer(self, send, turn: int, record: Connection) -> None:
         script = self.script
         user, assistant, response = f"user_{turn}", f"asst_{turn}", f"resp_{turn}"
         await send({"type": "input_audio_buffer.speech_stopped", "item_id": user})
@@ -156,6 +160,8 @@ class FakeRealtimeServer:
                     "item": {"id": user, "role": "user"}})
         await send({"type": "conversation.item.input_audio_transcription.completed",
                     "item_id": user, "transcript": script.transcript})
+        if script.answer_delay:
+            await asyncio.sleep(script.answer_delay)
         await send({"type": "response.created", "response": {"id": response}})
         await send({"type": "conversation.item.created",
                     "item": {"id": assistant, "role": "assistant"}})
@@ -163,6 +169,8 @@ class FakeRealtimeServer:
         words = script.answer.split(" ")
         for index in range(script.audio_chunks):
             pcm = np.full(script.samples_per_chunk, index + 1, dtype="<i2")
+            if record.received_before_answer is None:
+                record.received_before_answer = len(record.received)
             await send({"type": "response.output_audio.delta", "response_id": response,
                         "item_id": assistant,
                         "delta": base64.b64encode(pcm.tobytes()).decode()})

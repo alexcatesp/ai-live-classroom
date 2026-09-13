@@ -265,6 +265,24 @@ body {
 
 .table-scroll { overflow-x: auto; }
 
+/* -- conversation test ---------------------------------------------------- */
+
+.conversation-step {
+  margin: 12px 0;
+  color: var(--tone-active);
+  font-weight: 600;
+}
+
+.conversation {
+  margin: 12px 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+}
+
+.conversation dt { color: var(--muted); }
+.conversation dd { margin: 0; }
+
 .comparison {
   width: 100%;
   border-collapse: collapse;

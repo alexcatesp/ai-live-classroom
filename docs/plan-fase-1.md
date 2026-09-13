@@ -108,6 +108,12 @@ en un script de prueba manual.
   borrado de elementos, clave rechazada, configuración rechazada y cortes.
 - `scripts/realtime_smoke.py`: envía un WAV grabado a la API real e imprime la
   transcripción, el tiempo hasta el primer audio y el consumo.
+- **Panel «Probar conversación»** (`realtime/probe.py`): lo mismo desde la
+  aplicación, con el micrófono y la clave de la configuración. La pregunta viaja
+  en streaming y la da por terminada el servidor, como en clase. El micrófono se
+  cierra antes de que llegue la respuesta, y un test lo comprueba. La respuesta
+  se puede escuchar a 48 kHz por los altavoces configurados. Adelanta a H1 una
+  reproducción simple (el audio completo, sin streaming) que H2 sustituirá.
 - Configuración nueva: `turn_silence_ms` (2000), `transcription_model`,
   `realtime_noise_reduction` y `history_turns` (4).
 

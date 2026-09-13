@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ClassControls } from "./components/ClassControls";
+import { ConversationTest } from "./components/ConversationTest";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -282,6 +283,8 @@ export function App() {
       <WakeWordMeter status={listening}>
         <VoiceTraining client={client} classListening={Boolean(snapshot?.microphone_active)} />
       </WakeWordMeter>
+
+      <ConversationTest client={client} classListening={Boolean(snapshot?.microphone_active)} />
 
       <Modal title="Configuración" open={settingsOpen} onClose={closeSettings}>
         <SettingsPanel

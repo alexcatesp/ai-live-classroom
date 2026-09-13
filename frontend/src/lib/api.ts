@@ -7,6 +7,7 @@
  */
 
 import type {
+  ConversationTestStatus,
   DeviceInventory,
   DiagnosticsReport,
   ListeningStatus,
@@ -206,5 +207,23 @@ export class BackendClient {
 
   restoreOriginalModel(): Promise<VoiceStatus> {
     return this.request("/api/voice/restore", { method: "POST" });
+  }
+
+  // -- one real question (plan-fase-1, H1) --------------------------------
+
+  getConversationTest(): Promise<ConversationTestStatus> {
+    return this.request("/api/conversation-test");
+  }
+
+  startConversationTest(): Promise<ConversationTestStatus> {
+    return this.request("/api/conversation-test/start", { method: "POST" });
+  }
+
+  cancelConversationTest(): Promise<ConversationTestStatus> {
+    return this.request("/api/conversation-test/cancel", { method: "POST" });
+  }
+
+  playConversationTest(): Promise<ConversationTestStatus> {
+    return this.request("/api/conversation-test/play", { method: "POST" });
   }
 }

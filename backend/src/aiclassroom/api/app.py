@@ -25,6 +25,7 @@ from ..config.secrets import WrongPassphrase
 from ..config.settings import Settings
 from ..config.store import SettingsStore
 from ..diagnostics.runner import DiagnosticsReport, DiagnosticsRunner
+from ..realtime.probe import ConversationProbe, ProbeUnavailable
 from ..session.controller import ClassNotReady, SessionController
 from ..session.state import Event, InvalidTransition
 from ..voice.session import (
@@ -79,16 +80,29 @@ class AppContext:
     token: str
     last_report: DiagnosticsReport | None = None
     voice: VoiceTrainingSession = None  # type: ignore[assignment]
+    probe: ConversationProbe = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
+        # Both record through the controller's engine, so they use the same
+        # microphone as a class, and each refuses while the class or the other
+        # one holds it.
+        controller = self.controller
         if self.voice is None:
-            # Records through the controller's engine, so a take uses the same
-            # microphone as a class, and refuses while a class holds it.
-            controller = self.controller
             self.voice = VoiceTrainingSession(
                 store=self.store,
                 capture=capture_with_engine(controller.engine_factory),
-                microphone_in_use=lambda: controller.machine.is_microphone_active,
+                microphone_in_use=lambda: (
+                    controller.machine.is_microphone_active or self.probe.running
+                ),
+            )
+        if self.probe is None:
+            self.probe = ConversationProbe(
+                store=self.store,
+                engine_factory=controller.engine_factory,
+                microphone_in_use=lambda: (
+                    controller.machine.is_microphone_active
+                    or self.voice.status()["recording"]
+                ),
             )
 
 
@@ -152,6 +166,7 @@ def create_app(context: AppContext) -> FastAPI:
             )
         )
         yield
+        await context.probe.cancel()
         context.controller.stop()
 
     app = FastAPI(
@@ -219,6 +234,14 @@ def create_app(context: AppContext) -> FastAPI:
 
     @app.post("/api/class/start", dependencies=guarded, response_model=StateOut)
     async def start_class() -> StateOut:
+        if context.probe.running or context.voice.status()["recording"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El micrófono está ocupado con una prueba o una grabación. "
+                    "Espera a que termine."
+                ),
+            )
         # Opening PortAudio blocks, so it must not run on the event loop.
         await asyncio.to_thread(context.controller.start_class)
         return StateOut.of(context.controller.machine)
@@ -379,6 +402,31 @@ def create_app(context: AppContext) -> FastAPI:
     @app.post("/api/voice/restore", dependencies=guarded)
     async def restore_original_model() -> dict:
         return voice_call(context.voice.restore_original)
+
+    # -- one real question (plan-fase-1, H1) -----------------------------
+
+    async def probe_call(action) -> dict:
+        try:
+            await action()
+        except ProbeUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return context.probe.status()
+
+    @app.get("/api/conversation-test", dependencies=guarded)
+    async def conversation_test_status() -> dict:
+        return context.probe.status()
+
+    @app.post("/api/conversation-test/start", dependencies=guarded)
+    async def start_conversation_test() -> dict:
+        return await probe_call(context.probe.start)
+
+    @app.post("/api/conversation-test/cancel", dependencies=guarded)
+    async def cancel_conversation_test() -> dict:
+        return await probe_call(context.probe.cancel)
+
+    @app.post("/api/conversation-test/play", dependencies=guarded)
+    async def play_conversation_test() -> dict:
+        return await probe_call(context.probe.play)
 
     # -- events -----------------------------------------------------------
 

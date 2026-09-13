@@ -155,6 +155,28 @@ export interface VoiceStatus {
   unavailable_reason: string | null;
 }
 
+export interface ConversationTestResult {
+  question: string;
+  answer: string;
+  session_open_seconds: number;
+  /** From the question ending to the first sound of the answer. */
+  first_audio_seconds: number | null;
+  silence_seconds: number;
+  answer_seconds: number;
+  status: string | null;
+  usage: Record<string, unknown> | null;
+}
+
+export interface ConversationTestStatus {
+  state: "idle" | "connecting" | "listening" | "waiting" | "answering" | "done" | "failed";
+  error: string | null;
+  question: string;
+  answer: string;
+  result: ConversationTestResult | null;
+  can_play: boolean;
+  playing: boolean;
+}
+
 export type BackendEvent =
   | { type: "state"; payload: Transition | StateSnapshot }
   | { type: "wakeword"; payload: { phrase: string; score: number; at: string } };

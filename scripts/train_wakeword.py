@@ -76,6 +76,22 @@ EMBEDDING_CONTEXT_SECONDS = 0.76
 # of any window, and the clip yields no positive example at all.
 WINDOW_SECONDS = EMBEDDING_HOP_SECONDS * (WINDOW_FRAMES - 1) + EMBEDDING_CONTEXT_SECONDS
 
+# Things a teacher says immediately before invoking the assistant. Without
+# these, every positive has silence in front of the phrase and the model does
+# not recognise it mid-sentence -- which is exactly how it gets used.
+LEAD_INS = [
+    "vamos a ver",
+    "mirad",
+    "un momento",
+    "a ver",
+    "entonces",
+    "fijaos",
+    "pues nada",
+    "bueno",
+    "y ahora",
+    "escuchad esto",
+]
+
 # Words and phrases that are not the wake phrase but share sounds with it.
 # Training against near misses is what stops "oye, Marta" waking the assistant.
 NEAR_MISSES = [
@@ -124,6 +140,24 @@ LESSON = [
 
 
 # -- synthesis -------------------------------------------------------------
+
+
+def random_short_utterances(rng: np.random.Generator, count: int) -> list[str]:
+    """One to three words, the same shape as the wake phrase.
+
+    These matter more than any other negative. Positives are short utterances
+    surrounded by room tone; if every negative is a long continuous sentence,
+    the quickest thing for the classifier to learn is "brief speech between
+    silences", which it duly did -- scoring 1.0 on "mesa" and "ocho". Negatives
+    have to be laid out exactly like positives so that isolation carries no
+    information at all.
+    """
+    words = VOCABULARY.split()
+    utterances = []
+    for _ in range(count):
+        length = int(rng.integers(1, 4))
+        utterances.append(" ".join(rng.choice(words, size=length, replace=True)))
+    return utterances
 
 
 def random_sentences(rng: np.random.Generator, count: int) -> list[str]:
@@ -399,13 +433,25 @@ def build_corpus(
                 # The first pass is the clip as synthesised, so clean speech is
                 # in-distribution; the rest are roughed up.
                 processed = augment(spoken, rng, clean=attempt == 0)
-                phrase_seconds = processed.size / SAMPLE_RATE
+
+                # Half the examples have someone talking right up to the
+                # phrase, so it is recognised mid-sentence and not only after a
+                # pause. The phrase still ends the audio, which is the instant
+                # the window is labelled by.
+                body = processed
+                if attempt % 2 == 1:
+                    spoken_lead = speak(
+                        LEAD_INS[int(rng.integers(0, len(LEAD_INS)))],
+                        voice, speed, pitch, workspace,
+                    )
+                    if spoken_lead is not None:
+                        body = np.concatenate([spoken_lead, processed])
 
                 # Land the phrase so it ends past the window length, varying
                 # where, so the model tolerates different speaking rates.
                 ends_at = rng.uniform(WINDOW_SECONDS + 0.05, WINDOW_SECONDS + 0.9)
-                lead = max(0.1, ends_at - phrase_seconds)
-                clip, phrase_end = place(processed, lead, 1.0, rng)
+                lead = max(0.1, ends_at - body.size / SAMPLE_RATE)
+                clip, phrase_end = place(body, lead, 1.0, rng)
                 positives.append(positive_windows(features, clip, phrase_end))
             if index and index % 25 == 0:
                 print(f"  {index}/{len(combinations)}")
@@ -430,6 +476,30 @@ def build_corpus(
                 negatives.append(
                     windows_of(features, augment(spoken, rng, clean=attempt == 0))
                 )
+            if index and index % 25 == 0:
+                print(f"  {index}/{len(combinations)}")
+
+        # Short utterances placed exactly like the positives: same lead, same
+        # tail, same aligned window. This is what forces the model to listen to
+        # the phrase rather than to the silence around it.
+        print("Sintetizando enunciados cortos con la misma forma que la frase...")
+        short_negatives = NEAR_MISSES + random_short_utterances(rng, len(combinations))
+        rng.shuffle(short_negatives)
+        for index, (voice, speed, pitch) in enumerate(combinations):
+            text = short_negatives[index % len(short_negatives)]
+            spoken = speak(text, voice, speed, pitch, workspace)
+            if spoken is None:
+                continue
+            for attempt in range(max(2, augmentations // 2)):
+                processed = augment(spoken, rng, clean=attempt == 0)
+                utterance_seconds = processed.size / SAMPLE_RATE
+                ends_at = rng.uniform(WINDOW_SECONDS + 0.05, WINDOW_SECONDS + 0.9)
+                lead = max(0.1, ends_at - utterance_seconds)
+                clip, utterance_end = place(processed, lead, 1.0, rng)
+                # Both the aligned window and everything around it: a near miss
+                # is negative wherever it falls.
+                negatives.append(positive_windows(features, clip, utterance_end))
+                negatives.append(windows_of(features, clip))
             if index and index % 25 == 0:
                 print(f"  {index}/{len(combinations)}")
 

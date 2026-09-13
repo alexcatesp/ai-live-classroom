@@ -308,6 +308,10 @@ input[type="range"] {
 
 /* -- guards and unlock ---------------------------------------------------- */
 
+/* `.field label` is more specific than a bare `.checkbox`, so without matching
+   it here the checkbox falls back to display:block and sits jammed against its
+   text. */
+.field label.checkbox,
 .checkbox {
   display: flex;
   align-items: center;

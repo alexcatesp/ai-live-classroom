@@ -289,3 +289,36 @@ def test_the_wake_word_reaches_the_interface_as_an_event(store, machine):
     activation = next(event for event in seen if event["type"] == "wakeword")
     assert activation["payload"]["phrase"] == PHRASE
     assert activation["payload"]["score"] > 0.0
+
+
+# -- what the detector must not have learnt -------------------------------
+
+
+@pytest.mark.parametrize("utterance", ["mesa", "el perro", "buenos días", "ocho", "hola"])
+def test_a_short_unrelated_utterance_does_not_wake_it(real_controller, utterance):
+    """The failure this caught: a model that learnt "brief speech between
+    silences" instead of the phrase, and scored 1.0 on "mesa".
+
+    Positives are short utterances surrounded by room tone, so unless the
+    negatives are laid out the same way, isolation is the easiest signal for
+    the classifier to key on -- and it will.
+    """
+    controller, engine = real_controller
+    controller.prepare()
+    controller.start_class()
+
+    engine.feed(with_silence(say(utterance)))
+
+    assert controller.machine.state is State.PASSIVE_LISTENING, utterance
+
+
+def test_the_phrase_is_heard_inside_continuous_speech(real_controller):
+    """A teacher does not pause before saying it."""
+    controller, engine = real_controller
+    controller.prepare()
+    controller.start_class()
+
+    sentence = say("Vamos a ver el ejemplo. Oye Chat, explica esto.")
+    engine.feed(with_silence(sentence))
+
+    assert controller.machine.state is State.ACTIVATED

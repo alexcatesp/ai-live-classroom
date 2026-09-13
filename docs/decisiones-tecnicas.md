@@ -291,6 +291,38 @@ Corregido con `response_class=Response`. Investigado hasta el final: el
 reportaba el navegador era ruido interno por un cuerpo vacío sin leer y no
 llegaba a la interfaz. Aun así el 204 estaba mal formado y ahora no lo está.
 
+### P-9 — El detector aprendió el atajo, no la frase
+
+Entrenar el clasificador de «Oye Chat» costó siete rondas, y las tres primeras
+fallaron por errores míos en el corpus, no por el enfoque. Vale la pena
+anotarlos porque cualquiera que reentrene tropezará con los mismos.
+
+**Etiquetado desplazado.** Cada fotograma de embeddings resume los 0,76 s
+anteriores, así que una ventana de 16 fotogramas abarca 1,96 s. Colocaba la
+frase a 1,3 s del inicio y la etiquetaba como final de ventana: imposible, no
+hay ninguna ventana que termine ahí. Se perdían dos tercios de los positivos.
+
+**Colocación aleatoria con etiqueta fija.** La función que montaba el clip lo
+insertaba en una posición aleatoria, mientras yo etiquetaba como si estuviera
+en la que había pedido. Las ventanas «positivas» apuntaban a instantes
+arbitrarios y el modelo aprendía de ruido.
+
+**El atajo.** Ya con el etiquetado correcto, el modelo puntuaba 1,000 con
+«mesa», «el perro» y «ocho». No había aprendido la frase: había aprendido
+*enunciado corto entre silencios*, porque todos los positivos tenían esa forma
+y todos los negativos eran frases largas continuas. Se arregla sintetizando
+negativos cortos colocados exactamente igual que los positivos, de modo que el
+aislamiento no aporte información.
+
+**Y el simétrico.** Con eso resuelto, dejó de reconocer la frase dentro de
+habla continua, que es justo como la dice un profesor. Todos los positivos
+tenían silencio delante. Se arregla poniendo voz delante de la mitad de ellos.
+
+El aviso general: **la precisión por ventanas engaña**. El conjunto reservado
+daba 0,09% de falsos mientras el detector en streaming producía 869 activaciones
+por hora, porque una clase genera decenas de miles de ventanas. La única medida
+que significa algo es la de `scripts/measure_wakeword.py` sobre audio continuo.
+
 ### P-8 — Tauri no compila sin el sidecar
 
 `tauri::generate_context!` exige que exista `binaries/aiclassroom-backend-<triple>`,
@@ -318,21 +350,29 @@ Tres defensas, de la más barata a la más cara:
 3. **Ventana refractaria**, que ya existía, para no contar dos veces la misma
    activación.
 
-**Medido aquí**, sobre un minuto de ruido sintético con transientes y el motor
-real de openWakeWord, a sensibilidad extrema (0,95):
+**Medido aquí** con el modelo entrenado y el motor real, sobre habla sintética
+continua en español (frases de clase) y clips de la frase:
 
-| Configuración | Falsos por hora |
-|---|---|
-| Sin VAD, sin confirmación | **60** |
-| Con VAD | **0** |
-| Con VAD + confirmación de 2 frames | **0** |
+| Sensibilidad | Falsos por hora | Detección |
+|---|---|---|
+| 0,20 | **0** | 100% |
+| 0,35 | **0** | 100% |
+| 0,50 (predeterminada) | **0** | 100% |
+| 0,65 | **0** | 100% |
+| 0,80 | **0** | 100% |
 
-La cifra de 60 es de ruido sintético con un modelo de frase prestado, así que
-vale para comparar mecanismos, no como predicción de un aula. Lo que demuestra
-es que la puerta VAD hace exactamente lo que se espera de ella.
+Y sobre ruido con transientes, la puerta VAD por separado: 60 activaciones por
+hora sin ella, 0 con ella.
+
+Es voz sintética, sin acústica de aula ni varias personas hablando a la vez, de
+modo que estos números son un suelo, no una predicción. Lo que demuestran es
+que la cadena entera funciona y que las defensas hacen lo que dicen.
 
 **Lo que falta** es un dato que solo existe en el instituto: graba una hora de
-clase real sin decir la frase y pásala por el banco de medida:
+clase real sin decir la frase y pásala por el banco de medida. El modelo actual
+está entrenado con voces sintéticas y reconoce voces sintéticas; una persona
+real a cuatro metros de un portátil es otra cosa. Reentrena añadiendo
+grabaciones con `--extra-positives` antes de usarlo en clase:
 
 ```bash
 python scripts/measure_wakeword.py --models data/models \
@@ -422,7 +462,7 @@ hacerla con antelación, no el día de la clase.
 
 | # | Riesgo | Estado | Qué falta |
 |---|--------|--------|-----------|
-| R-1 | Falsos positivos de «Oye Chat» | Mitigado con VAD + confirmación | Medir una hora de clase real |
+| R-1 | Falsos positivos de «Oye Chat» | 0/hora medidos sobre voz sintética | Reentrenar con voces reales y medir una clase |
 | R-2 | Latencia del transporte WebSocket | Instrumentado y avisado | Leer el número en el instituto |
 | R-3 | Inspección TLS en la red del centro | Detectado y nombrado | — |
 | R-4 | Peso de la carpeta portable | Cerrado por decisión | — |

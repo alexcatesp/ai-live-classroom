@@ -182,6 +182,44 @@ centro, o si hay cortes que obliguen a subirlo.
 PC de desarrollo, y el test de privacidad demuestra que no sale ni un byte de
 audio fuera de la ventana activación → fin de turno.
 
+**Estado (13/09/2026): implementado, pendiente de probar en una clase real.**
+
+- `session/turn.py`, `TurnController`:
+  - abre la sesión Realtime al iniciar la clase y la cierra al finalizarla;
+  - recorre los estados del turno;
+  - escribe el preroll local y decide cuándo sale audio: solo desde la
+    activación hasta que el servidor da la pregunta por terminada.
+- **Privacidad, con tests:**
+  - 16 s de clase sin activación no envían nada;
+  - al acabar la pregunta deja de salir audio aunque la clase siga hablando;
+  - «Oye Chat» sin pregunta, con el preroll desactivado, vuelve a escuchar sin
+    enviar nada más.
+- **Preroll de 500 ms** (`preroll_ms`): un test comprueba que el audio anterior
+  a la activación llega con la pregunta.
+  - *Consecuencia descubierta:* el preroll suele llevar la cola de «Oye Chat»,
+    así que el servidor oye voz nada más empezar el turno y, si nadie pregunta,
+    acaba respondiendo a la frase sola.
+  - Las instrucciones piden un «¿Sí?» breve en ese caso. Distinguirlo antes de
+    responder exigiría esperar la transcripción en cada pregunta.
+- **Fallos que no tumban la clase:** estado nuevo `TURN_FAILED`, que vuelve a la
+  escucha pasiva con el motivo.
+  - Sin clave, la clase no empieza y dice por qué.
+  - Sin red, la clase empieza, escucha y avisa en cada activación mientras
+    reintenta.
+  - Si la conexión cae a mitad de turno, la API devuelve un error o la
+    respuesta no se completa, se aborta el turno, no la clase.
+- **Pausar o finalizar a mitad de respuesta** la cancela y la silencia.
+- **Adelantado de H4:** «Oye Chat» durante la respuesta y el botón **Parar**
+  cancelan la respuesta, envían `conversation.item.truncate` con los
+  milisegundos realmente oídos y vuelven a escuchar.
+  - Falta la otra mitad de H4: que la frase que interrumpe abra directamente la
+    nueva pregunta.
+- **Interfaz:** en el panel de estado se ven la conexión con la IA, la pregunta
+  y la respuesta en texto según llegan, el motivo de un fallo y el botón
+  **Parar**, visible solo mientras hay respuesta.
+- Configuración nueva: `preroll_ms`, `activation_timeout_seconds` (5 s) y
+  `max_question_seconds` (30 s).
+
 ### H4 — Interrupción
 
 - Disparadores:

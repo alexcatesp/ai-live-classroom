@@ -181,6 +181,25 @@ export interface ConversationTestStatus {
   playback_error: string | null;
 }
 
+/** A "turn" message from the backend's event socket (H3). */
+export interface TurnEvent {
+  kind: "turn_started" | "question" | "answer" | "turn_failed" | "turn_finished" | "connection";
+  text?: string;
+  final?: boolean;
+  reason?: string | null;
+  state?: string;
+}
+
+export interface TurnView {
+  question: string;
+  answer: string;
+  /** Why the last activation could not be answered, if it could not. */
+  failure: string | null;
+  /** The Realtime connection: "ready", "reconnecting", "failed"… */
+  realtime: string | null;
+  realtimeReason: string | null;
+}
+
 export type BackendEvent =
   | { type: "state"; payload: Transition | StateSnapshot }
   | { type: "wakeword"; payload: { phrase: string; score: number; at: string } };

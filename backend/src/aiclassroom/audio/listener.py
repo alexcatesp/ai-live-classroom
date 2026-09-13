@@ -103,11 +103,14 @@ class WakeWordListener:
         machine: SessionStateMachine,
         on_detection: Callable[[Detection], None] | None = None,
         echo_guard_margin: float = DEFAULT_ECHO_GUARD_MARGIN,
+        frame_observers: list[Callable[[np.ndarray], None]] | None = None,
     ) -> None:
         self._engine = engine
         self._detector = detector
         self._machine = machine
         self._on_detection = on_detection
+        # Shared with the controller, so an observer added later is seen too.
+        self._frame_observers = frame_observers if frame_observers is not None else []
         self._echo_guard_margin = max(0.0, echo_guard_margin)
         self._lock = threading.RLock()
         self.stats = ListenerStats()
@@ -134,6 +137,14 @@ class WakeWordListener:
         """Called on the PortAudio thread, once per 80 ms."""
         self.stats.frames_processed += 1
         self.stats.recent_levels.append(frame_level(frame))
+        # Observers see the frame before the detector, so the frame that
+        # completes the wake phrase is already in the turn's pre-roll when the
+        # activation arrives.
+        for observer in self._frame_observers:
+            try:
+                observer(frame)
+            except Exception:  # noqa: BLE001 - an observer must not kill capture
+                logger.exception("Un observador de audio falló.")
         detection = self._detector.process(frame)
         if detection is None:
             return

@@ -280,6 +280,8 @@ body {
   gap: 6px 14px;
 }
 
+.turn-view { margin-top: 12px; }
+
 .conversation dt { color: var(--muted); }
 .conversation dd { margin: 0; }
 

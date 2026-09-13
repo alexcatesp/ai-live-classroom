@@ -26,8 +26,10 @@ from ..config.settings import Settings
 from ..config.store import SettingsStore
 from ..diagnostics.runner import DiagnosticsReport, DiagnosticsRunner
 from ..realtime.probe import ConversationProbe, ProbeUnavailable
+from ..realtime.session import RealtimeUnavailable
 from ..session.controller import ClassNotReady, SessionController
-from ..session.state import Event, InvalidTransition
+from ..session.state import Event, InvalidTransition, State
+from ..session.turn import TurnController
 from ..voice.session import (
     Kind,
     VoiceBusy,
@@ -81,8 +83,15 @@ class AppContext:
     last_report: DiagnosticsReport | None = None
     voice: VoiceTrainingSession = None  # type: ignore[assignment]
     probe: ConversationProbe = None  # type: ignore[assignment]
+    turns: TurnController = None  # type: ignore[assignment]
+    #: Whether a class talks to the Realtime API (H3). Off, a class only
+    #: listens for the wake phrase, as in Phase 0 -- which is what the API
+    #: surface tests need, with no key and no network.
+    conversation: bool = True
 
     def __post_init__(self) -> None:
+        if self.turns is None:
+            self.turns = TurnController(controller=self.controller, store=self.store)
         # Both record through the controller's engine, so they use the same
         # microphone as a class, and each refuses while the class or the other
         # one holds it.
@@ -148,6 +157,8 @@ def create_app(context: AppContext) -> FastAPI:
         # The audio thread publishes through the hub, so it needs the loop that
         # is only running once the server has actually started.
         hub.bind(asyncio.get_running_loop())
+        # Questions and answers as text reach the interface over the same socket.
+        context.turns.set_publisher(hub.publish_threadsafe)
         context.controller.machine.subscribe(
             lambda transition: hub.publish_threadsafe(
                 {"type": "state", "payload": TransitionOut.of(transition).model_dump(mode="json")}
@@ -168,6 +179,7 @@ def create_app(context: AppContext) -> FastAPI:
         yield
         await context.probe.cancel()
         context.controller.stop()
+        await context.turns.close()
 
     app = FastAPI(
         title="AI Classroom Live",
@@ -242,8 +254,21 @@ def create_app(context: AppContext) -> FastAPI:
                     "Espera a que termine."
                 ),
             )
-        # Opening PortAudio blocks, so it must not run on the event loop.
-        await asyncio.to_thread(context.controller.start_class)
+        resuming = context.controller.machine.state is State.PAUSED
+        if context.conversation and not resuming and not context.turns.active:
+            # The session opens before the microphone: a refused key stops the
+            # class here, with the reason, instead of after it seems to start.
+            try:
+                await context.turns.open()
+            except RealtimeUnavailable as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
+            # Opening PortAudio blocks, so it must not run on the event loop.
+            await asyncio.to_thread(context.controller.start_class)
+        except Exception:
+            if not resuming:
+                await context.turns.close()
+            raise
         return StateOut.of(context.controller.machine)
 
     @app.post("/api/class/pause", dependencies=guarded, response_model=StateOut)
@@ -259,12 +284,31 @@ def create_app(context: AppContext) -> FastAPI:
     @app.post("/api/class/stop", dependencies=guarded, response_model=StateOut)
     async def stop_class() -> StateOut:
         await asyncio.to_thread(context.controller.stop)
+        await context.turns.close()
         return StateOut.of(context.controller.machine)
 
     @app.post("/api/class/recover", dependencies=guarded, response_model=StateOut)
     async def recover_class() -> StateOut:
         await asyncio.to_thread(context.controller.recover)
+        await context.turns.close()
         return StateOut.of(context.controller.machine)
+
+    @app.get("/api/turn", dependencies=guarded)
+    async def turn_status() -> dict:
+        """The Realtime connection and the current or last question (H3)."""
+        return context.turns.status()
+
+    @app.post("/api/turn/stop", dependencies=guarded)
+    async def stop_answer() -> dict:
+        """The emergency stop: cut the answer as "Oye Chat" would (plan-fase-1, H4)."""
+        machine = context.controller.machine
+        if machine.state not in (State.THINKING, State.SPEAKING):
+            raise HTTPException(status_code=409, detail="No hay ninguna respuesta que parar.")
+        engine = context.controller.engine
+        if engine is not None:
+            engine.stop_playback()
+        machine.try_dispatch(Event.INTERRUPT, reason="Parada manual")
+        return context.turns.status()
 
     @app.get("/api/listening", dependencies=guarded, response_model=ListeningOut)
     async def listening_status() -> ListeningOut:

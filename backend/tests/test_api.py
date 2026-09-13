@@ -42,6 +42,8 @@ def client(store, controller, monkeypatch):
             ),
         ),
         token=TOKEN,
+        # The surface is tested here; the spoken turn has test_turn.py.
+        conversation=False,
     )
     with TestClient(create_app(context)) as test_client:
         test_client.headers.update({TOKEN_HEADER: TOKEN})
@@ -451,3 +453,29 @@ def test_an_unknown_kind_of_take_is_not_found(client):
 def test_voice_endpoints_need_the_token(client):
     client.headers.pop(TOKEN_HEADER)
     assert client.get("/api/voice").status_code == 401
+
+
+# -- the spoken turn behind "Iniciar clase" (H3) -----------------------------
+
+
+def test_a_class_with_conversation_will_not_start_without_a_key(store, controller):
+    """The reason is given before the microphone opens, not after."""
+    context = AppContext(
+        store=store,
+        controller=controller,
+        runner=DiagnosticsRunner(store=store),
+        token=TOKEN,
+    )
+    with TestClient(create_app(context)) as client:
+        client.headers.update({TOKEN_HEADER: TOKEN})
+        client.post("/api/class/prepare")
+        response = client.post("/api/class/start")
+
+        assert response.status_code == 409
+        assert "clave" in response.json()["detail"]
+        assert client.get("/api/state").json()["state"] == "READY"
+        assert client.get("/api/turn").json()["connection"] == "disconnected"
+
+
+def test_the_emergency_stop_needs_an_answer_to_stop(client):
+    assert client.post("/api/turn/stop").status_code == 409

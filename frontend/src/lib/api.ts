@@ -135,6 +135,11 @@ export class BackendClient {
     return this.request("/api/class/recover", { method: "POST" });
   }
 
+  /** The emergency stop for an answer (plan-fase-1, H4). */
+  stopAnswer(): Promise<unknown> {
+    return this.request("/api/turn/stop", { method: "POST" });
+  }
+
   getListening(): Promise<ListeningStatus> {
     return this.request("/api/listening");
   }

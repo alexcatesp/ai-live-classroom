@@ -15,6 +15,8 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+
 from ..audio.engine import AudioEngine, AudioError, SoundDeviceAudioEngine
 from ..audio.listener import WakeWordListener
 from ..audio.wakeword import Detection, WakeWordDetector, WakeWordUnavailable, create_detector
@@ -95,11 +97,24 @@ class SessionController:
         self._listener: WakeWordListener | None = None
         self._lock = threading.RLock()
         self.detection_subscribers: list[Callable[[Detection], None]] = []
+        # Every microphone frame of a class, before the detector sees it. The
+        # spoken turn (H3) keeps a short local pre-roll from these and streams
+        # them to the API only between an activation and the end of a question.
+        self.frame_observers: list[Callable[[np.ndarray], None]] = []
+        # When something runs the spoken turn, it owns what happens after an
+        # activation, and the Phase 0 "back to listening in two seconds" timer
+        # stays out of its way.
+        self.turn_handler: Callable[[Detection], None] | None = None
 
     @property
     def engine_factory(self) -> EngineFactory:
         """Shared with voice training, so a take uses the same microphone as a class."""
         return self._engine_factory
+
+    @property
+    def engine(self) -> AudioEngine | None:
+        """The class's engine, which also plays the answers (H2)."""
+        return self._engine
 
     def _default_detector(self, settings: Settings) -> WakeWordDetector:
         return create_detector(
@@ -151,6 +166,7 @@ class SessionController:
                 machine=self.machine,
                 on_detection=self._notify_detection,
                 echo_guard_margin=settings.echo_guard_margin,
+                frame_observers=self.frame_observers,
             )
             try:
                 self._listener.start()
@@ -235,7 +251,15 @@ class SessionController:
         )
 
     def _notify_detection(self, detection: Detection) -> None:
-        self._schedule_activation_expiry()
+        handler = self.turn_handler
+        if handler is None:
+            self._schedule_activation_expiry()
+        else:
+            try:
+                handler(detection)
+            except Exception:  # noqa: BLE001 - a broken turn must not kill capture
+                logger.exception("El gestor de turnos falló al recibir una activación.")
+                self.machine.try_dispatch(Event.TURN_FAILED, reason="Fallo interno del turno")
         for subscriber in list(self.detection_subscribers):
             try:
                 subscriber(detection)

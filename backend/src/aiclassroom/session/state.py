@@ -51,6 +51,11 @@ class Event(StrEnum):
     REQUEST_CAPTURED = "REQUEST_CAPTURED"
     RESPONSE_STARTED = "RESPONSE_STARTED"
     RESPONSE_FINISHED = "RESPONSE_FINISHED"
+    #: A turn could not go on -- the API was unreachable, it returned an error,
+    #: the connection dropped mid-answer -- and the class goes back to
+    #: listening rather than into ERROR: one failed question is not a failed
+    #: class (spec section 19).
+    TURN_FAILED = "TURN_FAILED"
     INTERRUPT = "INTERRUPT"
     INTERRUPTION_HANDLED = "INTERRUPTION_HANDLED"
     PAUSE = "PAUSE"
@@ -91,6 +96,10 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.CAPTURING_REQUEST, Event.REQUEST_CAPTURED): State.THINKING,
     (State.THINKING, Event.RESPONSE_STARTED): State.SPEAKING,
     (State.SPEAKING, Event.RESPONSE_FINISHED): State.PASSIVE_LISTENING,
+    # Someone said the phrase, the capture opened, and then nobody asked.
+    (State.CAPTURING_REQUEST, Event.ACTIVATION_EXPIRED): State.PASSIVE_LISTENING,
+    # An answer that finished without a single sound.
+    (State.THINKING, Event.RESPONSE_FINISHED): State.PASSIVE_LISTENING,
     # A new intervention cancels the response (spec section 6.2). Thinking can be
     # cancelled too: the teacher may move on before the first audio arrives.
     (State.SPEAKING, Event.INTERRUPT): State.INTERRUPTED,
@@ -104,6 +113,12 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.READY, Event.STOP): State.STOPPED,
     (State.PAUSED, Event.STOP): State.STOPPED,
 }
+_TRANSITIONS.update(
+    {
+        (state, Event.TURN_FAILED): State.PASSIVE_LISTENING
+        for state in (State.ACTIVATED, State.CAPTURING_REQUEST, State.THINKING, State.SPEAKING)
+    }
+)
 _TRANSITIONS.update({(state, Event.PAUSE): State.PAUSED for state in _IN_CLASS})
 _TRANSITIONS.update({(state, Event.STOP): State.STOPPED for state in _IN_CLASS})
 # Anything that is not already finished can fail into ERROR.

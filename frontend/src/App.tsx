@@ -6,6 +6,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { Modal } from "./components/Modal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatePanel } from "./components/StatePanel";
+import { TurnView } from "./components/TurnView";
 import { VoiceTraining } from "./components/VoiceTraining";
 import { WakeWordMeter } from "./components/WakeWordMeter";
 import { BackendClient, readHandshake, readStartupProblem } from "./lib/api";
@@ -26,7 +27,7 @@ export function App() {
   const handshake = useMemo(readHandshake, []);
   const startupProblem = useMemo(readStartupProblem, []);
   const client = useMemo(() => (handshake ? new BackendClient(handshake) : null), [handshake]);
-  const { snapshot, connected, lastActivation } = useBackendConnection(client);
+  const { snapshot, connected, lastActivation, turn } = useBackendConnection(client);
 
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
   const [runningDiagnostics, setRunningDiagnostics] = useState(false);
@@ -233,7 +234,7 @@ export function App() {
       <header className="app-header">
         <div>
           <h1>AI Classroom Live</h1>
-          <p className="muted">Fase 0 · diagnóstico y palabra de activación</p>
+          <p className="muted">Fase 1 en desarrollo · conversación con «Oye Chat»</p>
         </div>
         <button
           type="button"
@@ -277,6 +278,12 @@ export function App() {
           onResume={control((backend) => backend.resumeClass())}
           onStop={control((backend) => backend.stopClass())}
           onRecover={control((backend) => backend.recover())}
+        />
+        <TurnView
+          state={snapshot?.state ?? null}
+          turn={turn}
+          busy={controlBusy}
+          onStop={control((backend) => backend.stopAnswer())}
         />
       </StatePanel>
 

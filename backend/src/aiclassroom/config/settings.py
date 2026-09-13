@@ -54,6 +54,13 @@ class Settings(BaseModel):
     # Earlier turns kept in the conversation; each is paid for again on every
     # new question (spec section 16).
     history_turns: int = Field(default=4, ge=0, le=20)
+    # Audio kept from just before an activation and sent with the question, so
+    # "Oye Chat, ¿qué...?" said without a pause does not lose its first words.
+    preroll_ms: int = Field(default=500, ge=0, le=2000)
+    # After "Oye Chat", how long to wait for a question to start.
+    activation_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    # A question still going after this long is ended and answered.
+    max_question_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
 
     max_response_seconds: int = Field(default=45, ge=5, le=300)
     materials_dir: str | None = None

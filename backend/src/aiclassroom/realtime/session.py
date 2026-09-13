@@ -294,11 +294,15 @@ class ManagedRealtimeSession:
 
     # -- lifecycle ---------------------------------------------------------
 
-    async def start(self) -> None:
+    async def start(self, keep_trying: bool = False) -> None:
         """Open the session, or raise if it cannot be opened even once.
 
         The first attempt is awaited so "Iniciar clase" can say at once that
         the key is wrong. After that, reconnection happens in the background.
+
+        With `keep_trying`, only a fatal refusal raises: a network that is down
+        at the start of a class is retried in the background like one that
+        drops later, and the class goes on listening meanwhile.
         """
         self._loop = asyncio.get_running_loop()
         self._stopping = False
@@ -306,11 +310,22 @@ class ManagedRealtimeSession:
         try:
             await self._open()
         except RealtimeUnavailable as exc:
+            if keep_trying and not exc.fatal:
+                self._set_state(ConnectionState.RECONNECTING, str(exc))
+                self._supervisor = asyncio.create_task(
+                    self._retry_then_supervise(str(exc)), name="realtime-supervisor"
+                )
+                return
             self._set_state(
                 ConnectionState.FAILED if exc.fatal else ConnectionState.DISCONNECTED, str(exc)
             )
             raise
         self._supervisor = asyncio.create_task(self._supervise(), name="realtime-supervisor")
+
+    async def _retry_then_supervise(self, why: str) -> None:
+        await self._reconnect(why)
+        if not self._stopping:
+            await self._supervise()
 
     async def stop(self) -> None:
         self._stopping = True

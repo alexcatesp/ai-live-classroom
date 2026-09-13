@@ -5,10 +5,12 @@ interviene cuando alguien dice **«Oye Chat»**. Aplicación de escritorio porta
 para Windows, pensada para ejecutarse en los equipos de un instituto sin
 permisos de administrador.
 
-> **Estado: Fase 0 (prueba técnica).** Esta versión comprueba que la aplicación
-> funciona en los equipos del centro: diagnóstico, palabra de activación y
-> carpeta portable. **Todavía no responde a preguntas**; la conversación es
-> trabajo de la Fase 1. Ver [`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md).
+> **Estado: Fase 1 (MVP) en desarrollo.** La Fase 0 está terminada:
+> diagnóstico, palabra de activación y carpeta portable. Ya hay conversación
+> hablada con «Oye Chat» (hitos H1 a H3 de
+> [`docs/plan-fase-1.md`](docs/plan-fase-1.md)). Faltan los materiales, la
+> personalidad, el registro de sesiones y la validación en el aula. Ver
+> [`docs/decisiones-tecnicas.md`](docs/decisiones-tecnicas.md).
 
 ## Qué incluye la Fase 0
 
@@ -100,10 +102,19 @@ desde la propia aplicación:
 Las grabaciones solo existen en memoria y se borran al terminar el
 entrenamiento. **Volver al modelo original** deshace el cambio (D-12).
 
-En esta fase el asistente **no responde todavía**: se activa, se queda dos
-segundos en *Activado* y vuelve a la escucha pasiva, listo para la siguiente
-vez. La conversación es la Fase 1, y con ella un panel con la transcripción de
-cada pregunta y su respuesta (D-11).
+**Con la clase iniciada, el asistente responde.** Di «Oye Chat» y, sin pausa o
+tras una breve, la pregunta. Termina sola cuando dejas de hablar un par de
+segundos; la respuesta suena mientras llega y la aplicación vuelve a la escucha
+pasiva.
+
+- En el panel de estado ves la pregunta y la respuesta en texto, y si la
+  conexión con la IA está disponible.
+- Para cortar una respuesta, di «Oye Chat» o pulsa **Parar**.
+- Al iniciar la clase se abre la conexión con la API. Sin clave guardada, la
+  clase no empieza y dice por qué. Sin red, la clase empieza igualmente, escucha
+  y avisa en cada activación mientras reintenta.
+- Solo sale audio del equipo desde «Oye Chat» hasta el final de la pregunta.
+  Durante la escucha pasiva no se envía nada.
 
 ### En Linux o macOS, sin esperar al CI
 
@@ -152,13 +163,13 @@ Node.js 20+, Rust estable y, en Linux, `libwebkit2gtk-4.1-dev libgtk-3-dev`.
 # Backend
 cd backend
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q          # 340 tests; los que necesitan modelos o audio real se omiten
+.venv/bin/python -m pytest -q          # 353 tests; los que necesitan modelos o audio real se omiten
 .venv/bin/python -m ruff check src tests
 
 # Frontend
 cd frontend
 npm ci
-npm run test                            # 121 tests
+npm run test                            # 129 tests
 npm run build                           # incluye la comprobación de tipos
 
 # Shell de escritorio

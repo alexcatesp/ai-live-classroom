@@ -51,19 +51,20 @@ export const STATE_PRESENTATION: Record<SessionState, StatePresentation> = {
   },
   CAPTURING_REQUEST: {
     label: "Escuchando la pregunta",
-    description: "Capturando la intervención.",
+    description:
+      "La pregunta se está enviando a la IA. Termina sola cuando dejes de hablar un par de segundos.",
     tone: "active",
     microphoneOpen: true,
   },
   THINKING: {
     label: "Pensando",
-    description: "Preparando la respuesta.",
+    description: "Pregunta recibida. Preparando la respuesta.",
     tone: "busy",
     microphoneOpen: false,
   },
   SPEAKING: {
     label: "Respondiendo",
-    description: "Reproduciendo la respuesta. Habla para interrumpir.",
+    description: "Reproduciendo la respuesta. Di «Oye Chat» o pulsa «Parar» para cortarla.",
     tone: "busy",
     microphoneOpen: false,
   },
@@ -93,7 +94,7 @@ export const STATE_PRESENTATION: Record<SessionState, StatePresentation> = {
   },
 };
 
-/** Phase 0 has no conversation, so these are the states a class moves through. */
+/** The states a running class moves through. */
 export const CLASS_IS_RUNNING: ReadonlySet<SessionState> = new Set<SessionState>([
   "PASSIVE_LISTENING",
   "ACTIVATED",

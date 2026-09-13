@@ -230,7 +230,7 @@ def test_a_whole_session_over_the_api(store, machine):
         store=store,
         controller=controller,
         runner=DiagnosticsRunner(store=store),
-        token="e2e",
+        token="e2e", conversation=False,
     )
 
     with TestClient(create_app(context)) as client:
@@ -269,7 +269,11 @@ def test_the_wake_word_reaches_the_interface_as_an_event(store, machine):
         ),
     )
     context = AppContext(
-        store=store, controller=controller, runner=DiagnosticsRunner(store=store), token="e2e"
+        store=store,
+        controller=controller,
+        runner=DiagnosticsRunner(store=store),
+        token="e2e",
+        conversation=False,
     )
 
     with TestClient(create_app(context)) as client:

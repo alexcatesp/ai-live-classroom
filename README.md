@@ -24,7 +24,9 @@ abre la sesión, confirma la clave y el modelo, y la cierra (D-03).
 
 La especificación completa está en
 [`docs/especificacion-tecnica.md`](docs/especificacion-tecnica.md); el código la
-cita por apartado («spec §14», «spec section 7»).
+cita por apartado («spec §14», «spec section 7»). El plan de la siguiente fase,
+con sus hitos y decisiones abiertas, está en
+[`docs/plan-fase-1.md`](docs/plan-fase-1.md).
 
 ## Arquitectura
 

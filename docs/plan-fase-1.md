@@ -269,6 +269,26 @@ audio fuera de la ventana activación → fin de turno.
 Pendiente de medir con altavoces reales: el pico que alcanza «Oye Chat» sobre
 la voz del asistente, y si 0,95 como techo deja pasar el eco.
 
+### H4b — Servidor propio como alternativa a la nube (D-14)
+
+Pedido por el profesor tras ver el coste de las pruebas de H3.
+
+**Estado (13/09/2026): implementado, pendiente de probar con el servidor real.**
+
+- Configuración: «En la nube (OpenAI)» o «En mi servidor». Si es el servidor,
+  hay que indicar dirección y modelo de transcripción, lenguaje y voz. La
+  elección persiste en `settings.json`.
+- `realtime/local.py`: la misma interfaz que la sesión Realtime, sobre
+  speaches, Ollama y Kokoro-FastAPI. Silero decide el fin de la pregunta.
+- Diagnóstico del servidor local en lugar de la clave y la API.
+- Tests con los servicios simulados: la forma de cada petición HTTP, una clase
+  completa sin clave, que la escucha pasiva no envía nada al servidor y que
+  «Oye Chat» encadena una pregunta nueva.
+- Guía de montaje: `docs/servidor-local.md`.
+
+**Terminado cuando** una clase real responde desde el PC de casa a través de
+Tailscale y se mide la latencia hasta la primera palabra.
+
 ### H5 — Personalidad y panel de transcripción
 
 - Prompt base de spec §13 como instrucciones de sesión, en un archivo editable

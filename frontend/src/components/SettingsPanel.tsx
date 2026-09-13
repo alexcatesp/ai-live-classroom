@@ -4,6 +4,28 @@ import { useState } from "react";
 
 import type { DeviceInventory, Settings, SettingsResponse } from "../lib/types";
 
+type LocalServerKey =
+  | "local_stt_url"
+  | "local_stt_model"
+  | "local_llm_url"
+  | "local_llm_model"
+  | "local_tts_url"
+  | "local_tts_voice";
+
+/** The teacher's server (D-14): an address and a model for each service. */
+const LOCAL_SERVER_FIELDS: { key: LocalServerKey; label: string; placeholder: string }[] = [
+  { key: "local_stt_url", label: "Transcripción (speaches)", placeholder: "http://pc-casa:8000" },
+  { key: "local_stt_model", label: "Modelo de transcripción", placeholder: "" },
+  {
+    key: "local_llm_url",
+    label: "Modelo de lenguaje (Ollama)",
+    placeholder: "http://pc-casa:11434",
+  },
+  { key: "local_llm_model", label: "Modelo de Ollama", placeholder: "qwen3:14b" },
+  { key: "local_tts_url", label: "Voz (Kokoro)", placeholder: "http://pc-casa:8880" },
+  { key: "local_tts_voice", label: "Voz de Kokoro", placeholder: "ef_dora" },
+];
+
 interface Props {
   data: SettingsResponse | null;
   devices: DeviceInventory | null;
@@ -50,6 +72,53 @@ export function SettingsPanel({
         <p className="warning-line" role="alert">
           {error}
         </p>
+      )}
+
+      <fieldset className="field provider">
+        <legend>Dónde se responden las preguntas</legend>
+        <label className="checkbox">
+          <input
+            type="radio"
+            name="ai-provider"
+            checked={settings.ai_provider === "cloud"}
+            onChange={() => update({ ai_provider: "cloud" })}
+          />
+          En la nube (OpenAI)
+        </label>
+        <label className="checkbox">
+          <input
+            type="radio"
+            name="ai-provider"
+            checked={settings.ai_provider === "local"}
+            onChange={() => update({ ai_provider: "local" })}
+          />
+          En mi servidor (faster-whisper, Qwen y Kokoro)
+        </label>
+        <p className="muted small">
+          {settings.ai_provider === "cloud"
+            ? "Necesita la clave de la API y se paga por uso."
+            : "Sin coste por uso. El PC del servidor debe estar encendido y conectado por " +
+              "Tailscale. «Probar conversación» sigue usando OpenAI."}
+        </p>
+      </fieldset>
+
+      {settings.ai_provider === "local" && (
+        <div className="field local-server">
+          {LOCAL_SERVER_FIELDS.map(({ key, label, placeholder }) => (
+            <div className="field" key={key}>
+              <label htmlFor={key}>{label}</label>
+              <input
+                id={key}
+                type="text"
+                value={settings[key]}
+                placeholder={placeholder}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => update({ [key]: event.target.value })}
+              />
+            </div>
+          ))}
+        </div>
       )}
 
       {data.requires_passphrase && !data.unlocked && (
@@ -244,18 +313,20 @@ export function SettingsPanel({
         </p>
       </div>
 
-      <div className="field">
-        <label htmlFor="model">Modelo de voz</label>
-        <input
-          id="model"
-          type="text"
-          value={settings.realtime_model}
-          onChange={(event) => update({ realtime_model: event.target.value })}
-        />
-        <p className="muted small">
-          Comprueba en la cuenta qué modelo está autorizado antes de la clase.
-        </p>
-      </div>
+      {settings.ai_provider === "cloud" && (
+        <div className="field">
+          <label htmlFor="model">Modelo de voz</label>
+          <input
+            id="model"
+            type="text"
+            value={settings.realtime_model}
+            onChange={(event) => update({ realtime_model: event.target.value })}
+          />
+          <p className="muted small">
+            Comprueba en la cuenta qué modelo está autorizado antes de la clase.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

@@ -43,7 +43,18 @@ export function App() {
   // A key locked behind a passphrase blocks the class, and settings are now out
   // of sight, so the dialog opens itself rather than wait to be found.
   const locked = Boolean(settings?.requires_passphrase && !settings.unlocked);
-  const settingsNeedAttention = locked || settings?.api_key_configured === false;
+  // What a class needs depends on where it is answered (D-14): the key for
+  // OpenAI, the three addresses for the teacher's server.
+  const local = settings?.settings.ai_provider === "local";
+  const server = settings?.settings;
+  const localIncomplete =
+    local &&
+    [server?.local_stt_url, server?.local_llm_url, server?.local_tts_url].some(
+      (url) => !url?.trim(),
+    );
+  const settingsNeedAttention = local
+    ? localIncomplete
+    : locked || settings?.api_key_configured === false;
   useEffect(() => {
     if (locked) setSettingsOpen(true);
   }, [locked]);

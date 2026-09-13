@@ -123,6 +123,10 @@ pasiva.
   por defecto, sale a unos 0,02 $ por minuto de pregunta y 0,08 $ por minuto de
   respuesta. La conversación anterior se relee desde la caché, que es mucho más
   barata (D-13).
+- **Sin coste por uso:** en Configuración puedes elegir **En mi servidor**, que
+  usa faster-whisper, Qwen en Ollama y Kokoro en un PC propio a través de
+  Tailscale. El montaje está en
+  [`docs/servidor-local.md`](docs/servidor-local.md) (D-14).
 - Solo sale audio del equipo desde «Oye Chat» hasta el final de la pregunta.
   Durante la escucha pasiva no se envía nada.
 

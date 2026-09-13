@@ -56,6 +56,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -63,10 +64,11 @@ import numpy as np
 from ..audio.devices import CAPTURE_SAMPLE_RATE, FRAME_SAMPLES
 from ..audio.playback import PlaybackStream
 from ..config.secrets import PassphraseRequired
-from ..config.settings import Settings
+from ..config.settings import AiProvider, Settings
 from ..config.store import SettingsStore
 from ..realtime import events
 from ..realtime.audio import REALTIME_RATE
+from ..realtime.local import LocalConfig, LocalConversationSession, create_speech_gate
 from ..realtime.prompt import DEFAULT_INSTRUCTIONS
 from ..realtime.session import (
     ConnectionChanged,
@@ -83,7 +85,19 @@ logger = logging.getLogger(__name__)
 PLAYBACK_POLL_SECONDS = 0.05
 
 SessionFactory = Callable[[str, events.SessionConfig, Settings], ManagedRealtimeSession]
+#: Builds the conversation on the teacher's server (D-14) from the settings,
+#: the instructions and the models folder, where Silero lives.
+LocalSessionFactory = Callable[[Settings, str, Path], LocalConversationSession]
 Publisher = Callable[[dict], None]
+
+
+def _default_local_session(
+    settings: Settings, instructions: str, models_dir: Path
+) -> LocalConversationSession:
+    return LocalConversationSession(
+        LocalConfig.from_settings(settings, instructions),
+        speech_gate=create_speech_gate(models_dir),
+    )
 
 
 def _default_session(
@@ -113,13 +127,17 @@ class TurnController:
         store: SettingsStore,
         session_factory: SessionFactory = _default_session,
         publish: Publisher | None = None,
+        local_session_factory: LocalSessionFactory = _default_local_session,
     ) -> None:
         self._controller = controller
         self._store = store
         self._session_factory = session_factory
+        self._local_session_factory = local_session_factory
         self._publish = publish or (lambda _message: None)
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._session: ManagedRealtimeSession | None = None
+        # The Realtime API's session or the local server's: same methods,
+        # same events (realtime/local.py).
+        self._session: ManagedRealtimeSession | LocalConversationSession | None = None
         self._settings: Settings | None = None
 
         # The pre-roll and the decision to stream are touched from the audio
@@ -157,24 +175,30 @@ class TurnController:
     async def open(self) -> None:
         """Open the class's session and take over activations.
 
-        A key that is missing or refused stops the class from starting: the
-        teacher can fix that now. A network that is down does not: the class
-        listens locally and the session keeps trying (spec section 19).
+        A key that is missing or refused, or a local server with no address,
+        stops the class from starting: the teacher can fix that now. A network
+        that is down does not: the class listens locally and the session keeps
+        trying (spec section 19).
         """
         self._loop = asyncio.get_running_loop()
         settings = self._store.load()
         self._settings = settings
-        try:
-            api_key = self._store.get_api_key()
-        except PassphraseRequired as exc:
-            raise RealtimeUnavailable(str(exc), fatal=True) from exc
-        if not api_key:
-            raise RealtimeUnavailable(
-                "No hay ninguna clave de la API guardada. Añádela en Configuración.", fatal=True
+        if settings.ai_provider is AiProvider.LOCAL:
+            session = self._local_session_factory(
+                settings, DEFAULT_INSTRUCTIONS, self._store.paths.models_dir
             )
-
-        config = events.config_from_settings(settings, DEFAULT_INSTRUCTIONS)
-        session = self._session_factory(api_key, config, settings)
+        else:
+            try:
+                api_key = self._store.get_api_key()
+            except PassphraseRequired as exc:
+                raise RealtimeUnavailable(str(exc), fatal=True) from exc
+            if not api_key:
+                raise RealtimeUnavailable(
+                    "No hay ninguna clave de la API guardada. Añádela en Configuración.",
+                    fatal=True,
+                )
+            config = events.config_from_settings(settings, DEFAULT_INSTRUCTIONS)
+            session = self._session_factory(api_key, config, settings)
         session.subscribe(self._on_event)
         self._session = session
 

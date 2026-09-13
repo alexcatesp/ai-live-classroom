@@ -8,9 +8,12 @@ from datetime import UTC, datetime
 
 from ..audio.devices import probe_devices
 from ..config.secrets import PassphraseRequired
-from ..config.settings import OPENAI_HOST, Settings
+from ..config.settings import OPENAI_HOST, AiProvider, Settings
 from ..config.store import SettingsStore
 from ..realtime.client import RealtimeClient, WebSocketRealtimeClient
+from ..realtime.local import HttpLocalServices, LocalConfig, LocalServices
+from ..realtime.prompt import DEFAULT_INSTRUCTIONS
+from ..realtime.session import RealtimeUnavailable
 from .checks import (
     CheckResult,
     CheckStatus,
@@ -77,11 +80,39 @@ class DiagnosticsRunner:
         realtime_client_factory=None,
         host: str = OPENAI_HOST,
         base_url: str = API_BASE_URL,
+        local_services_factory=None,
     ) -> None:
         self._store = store
+        self._local_services_factory = local_services_factory or HttpLocalServices
         self._host = host
         self._base_url = base_url
         self._realtime_client_factory = realtime_client_factory or self._default_realtime_client
+
+    async def _check_local_server(self, settings: Settings) -> CheckResult:
+        label = "Servidor local"
+        services: LocalServices = self._local_services_factory(
+            LocalConfig.from_settings(settings, DEFAULT_INSTRUCTIONS)
+        )
+        try:
+            await services.check()
+        except RealtimeUnavailable as exc:
+            return CheckResult(
+                "local_server", label, CheckStatus.FAILED, str(exc),
+                "Revisa las direcciones en Configuración, que el PC del servidor esté "
+                "encendido y que Tailscale esté conectado en los dos equipos.",
+            )
+        except Exception as exc:  # noqa: BLE001 - the screen must always render
+            logger.exception("El diagnóstico del servidor local falló de forma inesperada.")
+            return CheckResult(
+                "local_server", label, CheckStatus.FAILED,
+                f"Error inesperado al comprobar el servidor local: {exc}",
+            )
+        finally:
+            await services.close()
+        return CheckResult(
+            "local_server", label, CheckStatus.OK,
+            f"Transcripción, «{settings.local_llm_model}» y voz responden.",
+        )
 
     @staticmethod
     def _default_realtime_client(api_key: str) -> RealtimeClient:
@@ -98,6 +129,11 @@ class DiagnosticsRunner:
         results.append(
             check_wakeword_model(self._store.paths.models_dir, settings.wake_phrase)
         )
+
+        if settings.ai_provider is AiProvider.LOCAL:
+            # No OpenAI in the loop (D-14): what matters is the teacher's server.
+            results.append(await self._check_local_server(settings))
+            return DiagnosticsReport(results, started_at, datetime.now(UTC))
 
         dns_result = await check_dns(self._host)
         results.append(dns_result)

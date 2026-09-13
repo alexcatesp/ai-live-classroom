@@ -6,6 +6,7 @@ import { SettingsPanel } from "../SettingsPanel";
 import type { DeviceInventory, Settings, SettingsResponse } from "../../lib/types";
 
 const SETTINGS: Settings = {
+  ai_provider: "cloud",
   realtime_model: "gpt-realtime-2",
   reasoning_effort: "minimal",
   voice: "marin",
@@ -21,6 +22,12 @@ const SETTINGS: Settings = {
   transcription_model: "gpt-4o-mini-transcribe",
   realtime_noise_reduction: "far_field",
   history_max_tokens: 4000,
+  local_stt_url: "",
+  local_stt_model: "deepdml/faster-whisper-large-v3-turbo-ct2",
+  local_llm_url: "",
+  local_llm_model: "qwen3:14b",
+  local_tts_url: "",
+  local_tts_voice: "ef_dora",
   max_response_seconds: 45,
   materials_dir: null,
   transcript_retention: "discard",
@@ -257,5 +264,47 @@ describe("SettingsPanel, defensas del detector", () => {
   it("señala que la sensibilidad se mide, no se adivina", () => {
     setup(stored(false));
     expect(screen.getByText(/measure_wakeword/)).toBeInTheDocument();
+  });
+});
+
+// -- where questions are answered (D-14) ----------------------------------------
+
+describe("SettingsPanel, servidor local", () => {
+  function renderPanel(settings: Partial<Settings>, onSave = vi.fn()) {
+    render(
+      <SettingsPanel
+        data={{ ...stored(true), settings: { ...SETTINGS, ...settings } }}
+        devices={DEVICES}
+        saving={false}
+        error={null}
+        onSave={onSave}
+        onSaveApiKey={vi.fn()}
+        onClearApiKey={vi.fn()}
+        onUnlock={vi.fn()}
+      />,
+    );
+    return onSave;
+  }
+
+  it("guarda la elección de responder en el servidor propio", async () => {
+    const onSave = renderPanel({ ai_provider: "cloud" });
+    await userEvent.click(screen.getByLabelText(/En mi servidor/));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ ai_provider: "local" }));
+  });
+
+  it("pide las direcciones del servidor solo cuando se usa", () => {
+    renderPanel({ ai_provider: "cloud" });
+    expect(screen.queryByLabelText("Transcripción (speaches)")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Modelo de voz")).toBeInTheDocument();
+  });
+
+  it("muestra las tres direcciones y sus modelos en modo local", async () => {
+    const onSave = renderPanel({ ai_provider: "local" });
+    expect(screen.getByLabelText("Modelo de Ollama")).toHaveValue("qwen3:14b");
+    expect(screen.getByLabelText("Voz de Kokoro")).toHaveValue("ef_dora");
+    expect(screen.queryByLabelText("Modelo de voz")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Voz (Kokoro)"), "h");
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ local_tts_url: "h" }));
   });
 });

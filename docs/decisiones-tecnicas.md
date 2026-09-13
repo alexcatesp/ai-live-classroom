@@ -326,6 +326,59 @@ límite:
 
 ---
 
+## D-14 — Una segunda arquitectura: el servidor propio del profesor
+
+**Decisión.** La aplicación puede responder de dos formas, a elegir en
+Configuración (`ai_provider`, guardado en `settings.json`):
+
+- **En la nube:** la API Realtime de OpenAI, como hasta ahora.
+- **En mi servidor:** tres servicios en el PC de casa del profesor (RTX 5070 Ti),
+  a través de Tailscale. faster-whisper (speaches) transcribe, Qwen en Ollama
+  responde y Kokoro habla. Montaje en [`servidor-local.md`](servidor-local.md).
+
+**Cómo encaja.** `realtime/local.py` implementa `LocalConversationSession` con
+los mismos métodos y eventos que la sesión Realtime. `TurnController` no
+distingue entre las dos: el preroll, la ventana de privacidad, la interrupción,
+el truncado y los fallos que no tumban la clase son los mismos, y los tests del
+turno se repiten contra el servidor local simulado.
+
+- **Fin de la pregunta:** Silero en el equipo del aula, en lugar del VAD del
+  servidor. Es el mismo modelo que filtra la voz del detector, y hay una
+  alternativa por nivel de sonido si no está.
+- **Voz sin esperar:** la respuesta de Qwen se corta en frases según llega, y
+  cada frase va a Kokoro mientras Qwen sigue escribiendo.
+- **Sin razonamiento:** `think: false` en Ollama. En la nube,
+  `reasoning.effort: "minimal"`.
+- **Cancelar:** la confirmación de la cancelación llega después, como en la API,
+  para que el turno la reconozca como resto de una respuesta cortada.
+- **Historial:** los últimos 12 mensajes. No cuestan dinero, pero alargan la
+  espera de la primera palabra. De una respuesta interrumpida solo se guarda
+  lo que se oyó.
+- **Diagnóstico:** en modo local sustituye la clave y la conexión con OpenAI por
+  la comprobación del servidor y del modelo de Ollama.
+
+**Estudiado y descartado: transcribir en local para no pagar el audio de
+entrada en la nube.** Con los precios de D-13, una pregunta de 5 s con respuesta
+de 30 s se reparte así:
+
+| Parte | Coste |
+|---|---|
+| Audio de entrada (pregunta, preroll y 2 s de silencio) | ≈ 0,003 $ |
+| Transcripción para el panel (`gpt-4o-mini-transcribe`) | ≈ 0,0004 $ |
+| Audio de salida (la respuesta) | ≈ 0,038 $ |
+
+Mandar texto en lugar de audio ahorraría menos del 10 % por pregunta. A cambio,
+el PC del aula tendría que transcribir con CPU, lo que añade segundos de espera
+y pierde calidad frente a Whisper grande, y el modelo dejaría de oír la
+entonación. Lo que de verdad cuesta es la voz de la respuesta. Se abarata
+acortándola (H5) o no usando la nube: eso es el servidor propio.
+
+**Pendiente de medir en el aula:** la latencia real a través de Tailscale desde
+la red del instituto, y la calidad de Kokoro en español frente a la voz de
+OpenAI.
+
+---
+
 ## Decisiones heredadas de la spec (§23), sin discusión
 
 - Aplicación de escritorio para Windows, no aplicación web.

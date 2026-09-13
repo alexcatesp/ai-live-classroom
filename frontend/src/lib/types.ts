@@ -49,7 +49,11 @@ export interface DiagnosticsReport {
   results: CheckResult[];
 }
 
+/** Where a class's questions are answered (D-14). */
+export type AiProvider = "cloud" | "local";
+
 export interface Settings {
+  ai_provider: AiProvider;
   realtime_model: string;
   reasoning_effort: string;
   voice: string;
@@ -65,6 +69,12 @@ export interface Settings {
   transcription_model: string | null;
   realtime_noise_reduction: string | null;
   history_max_tokens: number;
+  local_stt_url: string;
+  local_stt_model: string;
+  local_llm_url: string;
+  local_llm_model: string;
+  local_tts_url: string;
+  local_tts_voice: string;
   max_response_seconds: number;
   materials_dir: string | null;
   transcript_retention: "discard" | "session_only" | "keep";

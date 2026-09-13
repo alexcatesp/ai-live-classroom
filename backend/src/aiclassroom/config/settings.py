@@ -20,6 +20,16 @@ DEFAULT_VOICE = "marin"
 OPENAI_HOST = "api.openai.com"
 
 
+class AiProvider(StrEnum):
+    """Where a class's questions are answered (D-14)."""
+
+    #: OpenAI's Realtime API: one model hears the question and speaks.
+    CLOUD = "cloud"
+    #: The teacher's own server, reached over Tailscale: faster-whisper
+    #: transcribes, Qwen on Ollama answers, Kokoro speaks. No API bill.
+    LOCAL = "local"
+
+
 class ReasoningEffort(StrEnum):
     """How much a reasoning-capable Realtime model thinks before answering.
 
@@ -43,6 +53,8 @@ class TranscriptRetention(StrEnum):
 class Settings(BaseModel):
     """Everything the teacher can configure. The API key is *not* here -- it
     lives encrypted in its own field of the settings file (see SettingsStore)."""
+
+    ai_provider: AiProvider = AiProvider.CLOUD
 
     realtime_model: str = DEFAULT_REALTIME_MODEL
     # Classroom questions need no deliberation, and reasoning is billed as
@@ -84,6 +96,17 @@ class Settings(BaseModel):
     activation_timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
     # A question still going after this long is ended and answered.
     max_question_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
+
+    # The local server (ai_provider = local). Each service keeps its own
+    # address, so they can run on different ports or machines. Empty means
+    # not configured, and a class says so instead of starting.
+    local_stt_url: str = ""
+    local_stt_model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"
+    local_llm_url: str = ""
+    local_llm_model: str = "qwen3:14b"
+    local_tts_url: str = ""
+    # Kokoro's Spanish voices: ef_dora, em_alex, em_santa.
+    local_tts_voice: str = "ef_dora"
 
     max_response_seconds: int = Field(default=45, ge=5, le=300)
     materials_dir: str | None = None

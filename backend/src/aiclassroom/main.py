@@ -1,6 +1,6 @@
 """Backend entry point.
 
-Started by the Tauri shell as a sidecar. It binds to a free loopback port and
+Started by the Tauri shell as a child process. It binds to a free loopback port and
 announces the port and the session token on stdout as a single line, which the
 shell reads before opening the window. Nothing is written to a fixed port or a
 well-known file, so two copies of the portable folder can run side by side.

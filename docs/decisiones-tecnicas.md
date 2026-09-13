@@ -323,12 +323,16 @@ daba 0,09% de falsos mientras el detector en streaming producía 869 activacione
 por hora, porque una clase genera decenas de miles de ventanas. La única medida
 que significa algo es la de `scripts/measure_wakeword.py` sobre audio continuo.
 
-### P-8 — Tauri no compila sin el sidecar
+### P-8 — Tauri no compilaba sin el sidecar — *superado por P-10*
 
-`tauri::generate_context!` exige que exista `binaries/aiclassroom-backend-<triple>`,
-de modo que el shell no se puede compilar sin haber empaquetado antes el
-backend. El trabajo de Linux del CI usa un archivo de relleno para poder pasar
-clippy; el de Windows es el que compila contra el backend real.
+Mientras el backend se declaraba como sidecar (`bundle.externalBin`),
+`tauri::generate_context!` exigía que existiera
+`binaries/aiclassroom-backend-<triple>`, y el trabajo de Linux del CI tenía que
+fabricar un archivo de relleno para pasar clippy.
+
+Ya no aplica: P-10 eliminó el sidecar. El shell lanza el backend por ruta
+explícita desde `runtime\backend\`, el shell compila sin backend empaquetado y
+ni el CI ni `build-portable.ps1` copian nada a `src-tauri\binaries\`.
 
 ---
 
@@ -361,6 +365,27 @@ puede arreglar.
 Lección: el CI verificaba que la carpeta se construye y que el backend arranca
 por su cuenta, pero nada comprobaba que **el contenedor pudiera lanzar al
 backend**. Ese salto solo aparece al hacer doble clic.
+
+### P-11 — La ventana abre, pero con `ERR_CONNECTION_REFUSED`
+
+Con P-10 resuelto, la ventana ya aparecía, pero en blanco con
+`ERR_CONNECTION_REFUSED`. Arrancar el backend a mano no cambiaba nada, porque
+el rechazo no venía del backend: venía de `http://localhost:1420`, el servidor
+de desarrollo de Vite.
+
+Tauri decide en compilación de dónde carga la interfaz. Sin la feature
+`custom-protocol` compila en modo desarrollo y usa `devUrl`; con ella, sirve
+`frontend/dist` embebido en el ejecutable. `cargo tauri build` la activa por su
+cuenta, pero el CI y `build-portable.ps1` usan `cargo build --release` a secas,
+así que el `.exe` distribuido buscaba un Vite que en el aula no existe.
+
+Resuelto compilando con `--features custom-protocol` en ambos sitios, y con un
+`compile_error!` en `main.rs` que rechaza un build de *release* en modo
+desarrollo: el error pasa de la pantalla del profesor a la compilación.
+
+De paso, `build-portable.ps1` seguía copiando el backend a
+`src-tauri\binaries\` como sidecar, un resto de antes de P-10 que ya no usaba
+nadie.
 
 ## Verificado en Windows real
 

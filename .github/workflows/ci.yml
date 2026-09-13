@@ -183,9 +183,13 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
 
+      # Without custom-protocol Tauri compiles in dev mode and the window loads
+      # devUrl (localhost:1420) instead of the embedded interface: the window
+      # opens on ERR_CONNECTION_REFUSED. `cargo tauri build` adds it on its own;
+      # plain cargo does not (P-11).
       - name: Construir el shell
         working-directory: src-tauri
-        run: cargo build --release
+        run: cargo build --release --features custom-protocol
 
       # Built by the Linux job, so the classroom PC never downloads or trains
       # anything (D-04).

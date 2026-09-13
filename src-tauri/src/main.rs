@@ -26,6 +26,15 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+// A release build without custom-protocol still compiles, and opens a window
+// pointed at the Vite dev server: ERR_CONNECTION_REFUSED on the teacher's
+// screen. Refuse to build it instead (P-11).
+#[cfg(all(dev, not(debug_assertions)))]
+compile_error!(
+    "release build without the custom-protocol feature: the window would load devUrl \
+     instead of the embedded interface. Use `cargo build --release --features custom-protocol`."
+);
+
 /// Must match READY_PREFIX in backend/src/aiclassroom/main.py.
 const READY_PREFIX: &str = "AICLASSROOM_READY ";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);

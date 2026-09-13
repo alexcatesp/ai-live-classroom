@@ -165,6 +165,10 @@ El trabajo de Windows no se limita a compilar: ejecuta el backend empaquetado
 con `--selftest --require-audio`, de modo que un build sin PortAudio —una
 aplicación incapaz de abrir el micrófono— falla en el CI y no en el aula.
 
+Si compilas el shell a mano, usa `cargo build --release --features custom-protocol`.
+Sin esa feature la ventana busca el servidor de Vite y muestra
+`ERR_CONNECTION_REFUSED` (P-11); el código se niega a compilar así.
+
 ### Los modelos de la palabra de activación
 
 Ninguno está en el repositorio. Hacen falta dos cosas en `data\models\`:

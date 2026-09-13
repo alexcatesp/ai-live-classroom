@@ -59,14 +59,6 @@ try {
 }
 finally { Pop-Location }
 
-# Tauri looks for the sidecar under the exact target triple of the build host.
-$triple = (rustc -vV | Select-String "^host:").ToString().Split(" ")[1]
-$binaries = Join-Path $root "src-tauri\binaries"
-New-Item -ItemType Directory -Force -Path $binaries | Out-Null
-Copy-Item `
-    (Join-Path $root "backend\dist\backend\aiclassroom-backend.exe") `
-    (Join-Path $binaries "aiclassroom-backend-$triple.exe") -Force
-
 Write-Host "== 4/6 Frontend: dependencias, tests y build ==" -ForegroundColor Cyan
 Push-Location (Join-Path $root "frontend")
 try {
@@ -83,7 +75,9 @@ finally { Pop-Location }
 Write-Host "== 5/6 Shell de escritorio (Tauri) ==" -ForegroundColor Cyan
 Push-Location (Join-Path $root "src-tauri")
 try {
-    cargo build --$Configuration
+    # custom-protocol embeds the interface; without it the window loads the
+    # Vite dev server and shows ERR_CONNECTION_REFUSED (P-11).
+    cargo build --$Configuration --features custom-protocol
     if ($LASTEXITCODE -ne 0) { throw "La compilación de Tauri ha fallado." }
 }
 finally { Pop-Location }

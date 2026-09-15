@@ -22,6 +22,7 @@ from aiclassroom.realtime.local import (
     HttpLocalServices,
     LocalConfig,
     LocalConversationSession,
+    ServiceFailed,
     sentences,
 )
 from aiclassroom.realtime.session import ConnectionState, RealtimeUnavailable
@@ -177,20 +178,40 @@ async def test_qwen_is_asked_not_to_think_and_its_stream_is_read():
     assert "options" not in seen["body"]
 
 
-async def test_the_model_is_loaded_without_changing_its_parameters():
-    seen = {}
+async def test_warming_up_wakes_the_three_services():
+    """Loading is not enough: faster-whisper's first transcription took 13.8 s
+    against 0.18 s once warm, and the first question must not pay for it."""
+    seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"done": True})
+        seen.append(request.url.path)
+        if request.url.path == "/api/generate":
+            body = json.loads(request.content)
+            assert "prompt" not in body
+            assert "options" not in body
+            assert body["keep_alive"] == "60m"
+            return httpx.Response(200, json={"done": True})
+        if request.url.path == "/v1/audio/transcriptions":
+            return httpx.Response(200, json={"text": ""})
+        return httpx.Response(200, content=b"\x00\x00")
 
     await http_services(handler).warm_up()
 
-    assert seen["url"] == "http://casa:11434/api/generate"
-    assert "prompt" not in seen["body"]
-    assert "options" not in seen["body"]
-    assert seen["body"]["keep_alive"] == "60m"
+    assert seen == [
+        "/api/generate",
+        "/v1/audio/transcriptions",
+        "/v1/audio/speech",
+    ]
+
+
+async def test_an_error_from_a_service_is_explained_not_quoted():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Internal Server Error")
+
+    with pytest.raises(ServiceFailed) as failure:
+        await http_services(handler).transcribe(np.zeros(1600, dtype=np.int16))
+    assert "transcripción" in str(failure.value)
+    assert "memoria de vídeo" in str(failure.value)
 
 
 async def test_kokoro_is_asked_for_raw_pcm_in_the_chosen_voice():

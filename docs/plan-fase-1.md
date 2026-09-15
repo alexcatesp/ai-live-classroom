@@ -296,10 +296,14 @@ Detalle en `servidor-local.md`.
 
 Pendiente, decidido con el profesor:
 
-- **Calentar los tres servicios al arrancar la app** y al cambiar a modo local:
-  una generación real de Qwen (cargar el modelo no basta: el primer prompt tardó
-  dos minutos más), medio segundo de silencio a Whisper y una palabra a Kokoro.
-  Qwen se mantiene cargado mientras la app esté abierta.
+- **Hecho:** al abrir la sesión se calientan los tres servicios (el modelo, una
+  transcripción de medio segundo de silencio y una frase de voz), unos 10 s en
+  segundo plano. Cargar no basta: el primer trabajo de cada servicio es lento
+  aunque ya esté en memoria.
+- **Hecho:** un error del servidor local se cuenta con palabras («falta de
+  memoria de vídeo»), no con un «500 Internal Server Error».
+- **Pendiente:** que el calentamiento ocurra también al arrancar la aplicación,
+  antes de iniciar la clase.
 - **Idioma y voz de Kokoro** en Configuración, con voces de español de España
   (`ef_dora`, `em_alex`, `em_santa`), en el hito de personalidad (H5).
 

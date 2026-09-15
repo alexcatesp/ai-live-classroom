@@ -57,10 +57,15 @@ HISTORY_MESSAGES = 12
 RETRY_SECONDS = 5.0
 CONNECT_TIMEOUT = 5.0
 READ_TIMEOUT = 60.0
-# Loading a 27B model from disk took 72 s the first time on the RTX 5070 Ti,
-# and its first prompt two minutes more (13/09/2026). The class loads it as
-# it starts, so no question waits for that.
+# Every service is slow the first time and fast afterwards: loading a 27B
+# model from disk took 72 s and its first prompt two minutes more (13/09/2026),
+# and faster-whisper's first transcription took 13.8 s against 0.18 s once warm
+# (15/09/2026). The class warms all three as it starts, so no question pays it.
 WARM_UP_TIMEOUT = 300.0
+#: Half a second of silence, enough to make Whisper do a real transcription.
+WARM_UP_SILENCE_MS = 500
+WARM_UP_SENTENCE = "Hola."
+
 # The context and the answer ceiling live in the model's Modelfile
 # (docs/ollama/Modelfile.aula), not in each request: a request that set
 # num_ctx would reload a model another application keeps with a larger one.
@@ -110,6 +115,32 @@ class ServerUnreachable(RuntimeError):
     """A service did not answer: the network, Tailscale or the PC is down."""
 
 
+class ServiceFailed(RuntimeError):
+    """A service answered with an error, said in words a teacher can act on."""
+
+
+def _raise_for_status(response: httpx.Response, service: str) -> None:
+    """An HTTP status turned into something worth reading in a classroom.
+
+    "Server error '500 Internal Server Error' for url ..." told the teacher
+    nothing; running out of video memory, which is what a 500 from the local
+    server usually is, deserves to be named.
+    """
+    if response.status_code < 400:
+        return
+    if response.status_code >= 500:
+        detail = (
+            "Suele ser falta de memoria de vídeo: comprueba que caben el modelo "
+            "de lenguaje, la transcripción y la voz en la tarjeta."
+        )
+    else:
+        detail = "La petición fue rechazada."
+    raise ServiceFailed(
+        f"El servidor local {service} respondió con un error "
+        f"(HTTP {response.status_code}). {detail}"
+    )
+
+
 # -- the three services ----------------------------------------------------------
 
 
@@ -118,7 +149,7 @@ class LocalServices(Protocol):
         """Raise RealtimeUnavailable if the server cannot hold a class."""
 
     async def warm_up(self) -> None:
-        """Load the language model before the first question needs it."""
+        """Wake all three services before the first question needs them."""
 
     async def transcribe(self, pcm16k: np.ndarray) -> str: ...
 
@@ -187,7 +218,9 @@ class HttpLocalServices:
             )
 
     async def warm_up(self) -> None:
-        # A generate request without a prompt only loads the model.
+        # The model first, which is the slowest to load, and then a real
+        # transcription and a real sentence of speech: loading is not enough,
+        # each one is slow again on its first piece of work.
         await self._client.post(
             self._config.llm_url + "/api/generate",
             json={
@@ -196,6 +229,10 @@ class HttpLocalServices:
             },
             timeout=WARM_UP_TIMEOUT,
         )
+        silence = np.zeros(MICROPHONE_RATE * WARM_UP_SILENCE_MS // 1000, dtype=np.int16)
+        await self.transcribe(silence)
+        async for _chunk in self.speak(WARM_UP_SENTENCE):
+            pass
 
     async def transcribe(self, pcm16k: np.ndarray) -> str:
         config = self._config
@@ -211,7 +248,7 @@ class HttpLocalServices:
             )
         except httpx.HTTPError as exc:
             raise ServerUnreachable(f"transcripción: {exc.__class__.__name__}") from exc
-        response.raise_for_status()
+        _raise_for_status(response, "de transcripción")
         return str(response.json().get("text", "")).strip()
 
     async def chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
@@ -229,7 +266,7 @@ class HttpLocalServices:
             async with self._client.stream(
                 "POST", config.llm_url + "/api/chat", json=body
             ) as response:
-                response.raise_for_status()
+                _raise_for_status(response, "del modelo de lenguaje")
                 async for line in response.aiter_lines():
                     if not line.strip():
                         continue
@@ -259,7 +296,7 @@ class HttpLocalServices:
             async with self._client.stream(
                 "POST", config.tts_url + "/v1/audio/speech", json=body
             ) as response:
-                response.raise_for_status()
+                _raise_for_status(response, "de voz")
                 async for chunk in response.aiter_bytes():
                     if chunk:
                         yield chunk
@@ -585,6 +622,9 @@ class LocalConversationSession:
         except ServerUnreachable as exc:
             logger.warning("Servidor local inalcanzable: %s", exc)
             self._lost(f"Se perdió el servidor local ({exc}).")
+        except ServiceFailed as exc:
+            logger.warning("El servidor local falló: %s", exc)
+            self._emit(events.ApiError("error", "local_error", str(exc)))
         except Exception as exc:  # noqa: BLE001 - one failed answer, not the class
             logger.exception("La respuesta local falló.")
             self._emit(events.ApiError("error", "local_error", f"Servidor local: {exc}"))

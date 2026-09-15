@@ -6,7 +6,7 @@ través de Tailscale:
 
 | Servicio | Qué hace | Proyecto | Puerto |
 |---|---|---|---|
-| Transcripción | Audio de la pregunta → texto | [speaches](https://speaches.ai/) (faster-whisper) | 8000 |
+| Transcripción | Audio de la pregunta → texto | `scripts/whisper_server.py` (faster-whisper) | 8000 |
 | Modelo de lenguaje | Texto → respuesta | [Ollama](https://ollama.com/) con Qwen | 11434 |
 | Voz | Respuesta → audio PCM a 24 kHz | [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) | 8880 |
 
@@ -27,9 +27,53 @@ El tráfico va cifrado por WireGuard, así que las direcciones pueden ser `http:
 relés DERP sobre el puerto 443. Funciona, pero con más latencia. Hay que
 comprobarlo en el aula antes de depender de ello.
 
-## 2. Los servicios
+## 2. Transcripción: `whisper_server.py` en Windows, sin Docker
 
-Con Docker Desktop y soporte de GPU (WSL2 en Windows):
+En contenedor no cabía: WSL no puede usar los últimos gigabytes que Windows
+reserva, así que Whisper fallaba con «CUDA out of memory» con 3 GB aparentemente
+libres, y dos veces se llevó por delante el motor de Docker entero. Un proceso
+nativo dispone de toda la tarjeta. Es lo que hace `scripts/whisper_server.py`,
+que responde exactamente lo mismo que speaches.
+
+Una vez, en el PC del servidor:
+
+```powershell
+mkdir D:\whisper-aula; cd D:\whisper-aula
+uv venv --python 3.11 venv
+uv pip install --python venv\Scripts\python.exe faster-whisper fastapi uvicorn `
+  python-multipart nvidia-cublas-cu12 nvidia-cudnn-cu12
+```
+
+Y para arrancarlo (desde la carpeta del repositorio):
+
+```powershell
+$env:HF_HOME = "D:\whisper-aula\models"
+# Solo si un antivirus inspecciona el HTTPS, para poder descargar el modelo:
+$env:SSL_CERT_FILE = "$env:USERPROFILE\.docker-certs\ca-bundle.pem"
+D:\whisper-aula\venv\Scripts\python.exe scripts\whisper_server.py --host 0.0.0.0 --port 8000
+```
+
+La primera vez descarga el modelo (unos 2 minutos). Después carga en 7 s y se
+queda cargado. Para que arranque solo, crea una tarea programada «al iniciar
+sesión» con ese mismo comando, como las de Hermes.
+
+**Medido en la RTX 5070 Ti (15/09/2026), con gemma4 y Kokoro también cargados:**
+
+| | 1.ª transcripción | siguientes |
+|---|---|---|
+| Transcripción de 3–5 s de audio | 13,8 s | **0,18 s** |
+| Primer audio tras acabar la pregunta | 15,0 s | **1,23 s** |
+| VRAM total de la tarjeta | 12,8 GB de 16,3, estable | |
+
+Los 13,8 s de la primera son la puesta en marcha de CUDA. La aplicación la
+evita: al abrir la sesión calienta los tres servicios (el modelo, una
+transcripción de medio segundo de silencio y una frase corta de voz), y eso
+lleva unos 10 s en total.
+
+## 3. La alternativa en contenedor: speaches
+
+Sigue siendo válida si en tu equipo sí hay memoria de sobra. Con Docker
+Desktop y soporte de GPU (WSL2 en Windows):
 
 ```bash
 # Transcripción (faster-whisper). Los modelos se guardan en el volumen.
@@ -174,7 +218,7 @@ las clases.
 - La calidad en español es buena para clase, con alguna errata propia de 2 bits
   («explícamente»).
 
-## 3. La aplicación
+## 4. La aplicación
 
 En **Configuración → Dónde se responden las preguntas**, elige **En mi
 servidor** y rellena:

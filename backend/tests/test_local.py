@@ -14,6 +14,7 @@ from aiclassroom.audio.devices import FRAME_SAMPLES
 from aiclassroom.audio.engine import FakeAudioEngine
 from aiclassroom.audio.wakeword import ScriptedWakeWordDetector
 from aiclassroom.config.settings import AiProvider
+from aiclassroom.config.store import SettingsStore
 from aiclassroom.diagnostics.checks import CheckStatus
 from aiclassroom.diagnostics.runner import DiagnosticsRunner
 from aiclassroom.realtime import events
@@ -24,6 +25,7 @@ from aiclassroom.realtime.local import (
     LocalConversationSession,
     ServiceFailed,
     sentences,
+    warm_up_local_server,
 )
 from aiclassroom.realtime.session import ConnectionState, RealtimeUnavailable
 from aiclassroom.session.controller import SessionController
@@ -363,6 +365,43 @@ async def test_an_unreachable_server_is_retried_while_the_class_listens():
         await wait_until(lambda: services.warmed_up == 1)
     finally:
         await session.stop()
+    assert services.closed
+
+
+# -- waking the server before a class ------------------------------------------
+
+
+def local_settings(store: SettingsStore, **overrides):
+    return store.load().model_copy(update={
+        "ai_provider": AiProvider.LOCAL,
+        "local_stt_url": "http://casa:8000",
+        "local_llm_url": "http://casa:11434",
+        "local_tts_url": "http://casa:8880",
+        **overrides,
+    })
+
+
+async def test_the_server_is_woken_before_the_first_class(store):
+    services = FakeServices()
+
+    assert await warm_up_local_server(local_settings(store), "instrucciones", services) is True
+    assert services.warmed_up == 1
+    assert services.closed
+
+
+async def test_nothing_is_woken_without_an_address(store):
+    services = FakeServices()
+
+    assert await warm_up_local_server(
+        local_settings(store, local_tts_url=""), "instrucciones", services
+    ) is False
+    assert services.warmed_up == 0
+
+
+async def test_a_server_that_is_off_does_not_stop_the_application(store):
+    services = FakeServices(unavailable=RealtimeUnavailable("apagado"))
+
+    assert await warm_up_local_server(local_settings(store), "instrucciones", services) is False
     assert services.closed
 
 

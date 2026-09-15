@@ -103,9 +103,11 @@ class Settings(BaseModel):
     local_stt_url: str = ""
     local_stt_model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"
     local_llm_url: str = ""
-    # Built from docs/ollama/Modelfile.aula: qwen3.8:27b with a context and an
-    # answer length for a class, leaving the original to other applications.
-    local_llm_model: str = "qwen3.8-aula"
+    # Built from docs/ollama/Modelfile.aula-gemma. Measured against
+    # qwen3.8-aula on a 16 GB card: 7.8 GB instead of 9.3, 76 tokens/s instead
+    # of 55, and a first sentence in 0.5-0.9 s instead of 1.4 -- and those
+    # 1.5 GB are what lets transcription and voice share the card (D-14).
+    local_llm_model: str = "gemma4-aula"
     local_tts_url: str = ""
     # Kokoro's Spanish voices: ef_dora, em_alex, em_santa.
     local_tts_voice: str = "ef_dora"

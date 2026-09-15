@@ -21,7 +21,7 @@ const LOCAL_SERVER_FIELDS: { key: LocalServerKey; label: string; placeholder: st
     label: "Modelo de lenguaje (Ollama)",
     placeholder: "http://pc-casa:11434",
   },
-  { key: "local_llm_model", label: "Modelo de Ollama", placeholder: "qwen3.8-aula" },
+  { key: "local_llm_model", label: "Modelo de Ollama", placeholder: "gemma4-aula" },
   { key: "local_tts_url", label: "Voz (Kokoro)", placeholder: "http://pc-casa:8880" },
   { key: "local_tts_voice", label: "Voz de Kokoro", placeholder: "ef_dora" },
 ];

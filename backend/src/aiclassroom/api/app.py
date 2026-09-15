@@ -22,10 +22,12 @@ from .. import __version__
 from ..audio.devices import probe_devices
 from ..audio.engine import AudioError
 from ..config.secrets import WrongPassphrase
-from ..config.settings import Settings
+from ..config.settings import AiProvider, Settings
 from ..config.store import SettingsStore
 from ..diagnostics.runner import DiagnosticsReport, DiagnosticsRunner
+from ..realtime.local import warm_up_local_server
 from ..realtime.probe import ConversationProbe, ProbeUnavailable
+from ..realtime.prompt import LOCAL_INSTRUCTIONS
 from ..realtime.session import RealtimeUnavailable
 from ..session.controller import ClassNotReady, SessionController
 from ..session.state import Event, InvalidTransition, State
@@ -88,6 +90,19 @@ class AppContext:
     #: listens for the wake phrase, as in Phase 0 -- which is what the API
     #: surface tests need, with no key and no network.
     conversation: bool = True
+    #: Waking the teacher's server (D-14): one at a time, in the background.
+    warm_up: asyncio.Task | None = None
+
+    def warm_up_local(self) -> None:
+        """Wake the local server if that is where questions are answered."""
+        settings = self.store.load()
+        if settings.ai_provider is not AiProvider.LOCAL:
+            return
+        if self.warm_up is not None and not self.warm_up.done():
+            return
+        self.warm_up = asyncio.ensure_future(
+            warm_up_local_server(settings, LOCAL_INSTRUCTIONS)
+        )
 
     def __post_init__(self) -> None:
         if self.turns is None:
@@ -164,6 +179,9 @@ def create_app(context: AppContext) -> FastAPI:
                 {"type": "state", "payload": TransitionOut.of(transition).model_dump(mode="json")}
             )
         )
+        # The three local services are slow on their first piece of work, so
+        # they are woken now rather than when the class starts (D-14).
+        context.warm_up_local()
         context.controller.detection_subscribers.append(
             lambda detection: hub.publish_threadsafe(
                 {
@@ -177,6 +195,8 @@ def create_app(context: AppContext) -> FastAPI:
             )
         )
         yield
+        if context.warm_up is not None and not context.warm_up.done():
+            context.warm_up.cancel()
         await context.probe.cancel()
         context.controller.stop()
         await context.turns.close()
@@ -335,6 +355,9 @@ def create_app(context: AppContext) -> FastAPI:
     @app.put("/api/settings", dependencies=guarded, response_model=SettingsOut)
     async def put_settings(body: Settings) -> SettingsOut:
         context.store.save(body)
+        # A new address, or a switch to the local server, deserves the same
+        # head start the application got when it opened.
+        context.warm_up_local()
         return settings_payload(body)
 
     # response_class matters here: FastAPI would otherwise label the empty 204

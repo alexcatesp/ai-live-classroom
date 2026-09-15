@@ -309,6 +309,31 @@ class HttpLocalServices:
         await self._client.aclose()
 
 
+async def warm_up_local_server(
+    settings: Any, instructions: str, services: LocalServices | None = None
+) -> bool:
+    """Wake the teacher's server, if that is where this class would be answered.
+
+    Called when the application starts and whenever the settings point it
+    somewhere new, so the ten seconds the three services need are spent while
+    the teacher is still setting up rather than at the first question.
+    """
+    config = LocalConfig.from_settings(settings, instructions)
+    if config.missing():
+        return False
+    services = services or HttpLocalServices(config)
+    try:
+        await services.check()
+        await services.warm_up()
+    except Exception as exc:  # noqa: BLE001 - a class can still start and say why
+        logger.info("No se pudo preparar el servidor local todavía: %s", exc)
+        return False
+    finally:
+        with contextlib.suppress(Exception):
+            await services.close()
+    return True
+
+
 # -- where a question ends -------------------------------------------------------
 
 

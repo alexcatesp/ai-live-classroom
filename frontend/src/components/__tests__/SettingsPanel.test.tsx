@@ -25,7 +25,7 @@ const SETTINGS: Settings = {
   local_stt_url: "",
   local_stt_model: "deepdml/faster-whisper-large-v3-turbo-ct2",
   local_llm_url: "",
-  local_llm_model: "qwen3.8-aula",
+  local_llm_model: "gemma4-aula",
   local_tts_url: "",
   local_tts_voice: "ef_dora",
   max_response_seconds: 45,
@@ -300,7 +300,7 @@ describe("SettingsPanel, servidor local", () => {
 
   it("muestra las tres direcciones y sus modelos en modo local", async () => {
     const onSave = renderPanel({ ai_provider: "local" });
-    expect(screen.getByLabelText("Modelo de Ollama")).toHaveValue("qwen3.8-aula");
+    expect(screen.getByLabelText("Modelo de Ollama")).toHaveValue("gemma4-aula");
     expect(screen.getByLabelText("Voz de Kokoro")).toHaveValue("ef_dora");
     expect(screen.queryByLabelText("Modelo de voz")).not.toBeInTheDocument();
 

@@ -479,3 +479,37 @@ def test_a_class_with_conversation_will_not_start_without_a_key(store, controlle
 
 def test_the_emergency_stop_needs_an_answer_to_stop(client):
     assert client.post("/api/turn/stop").status_code == 409
+
+
+def test_the_local_server_is_woken_as_the_application_starts(store, controller, monkeypatch):
+    """The three local services are slow on their first piece of work (D-14)."""
+    from aiclassroom.api import app as api
+    from aiclassroom.config.settings import AiProvider
+
+    store.save(store.load().model_copy(update={
+        "ai_provider": AiProvider.LOCAL,
+        "local_stt_url": "http://casa:8000",
+        "local_llm_url": "http://casa:11434",
+        "local_tts_url": "http://casa:8880",
+    }))
+    woken = []
+
+    async def fake_warm_up(settings, instructions, services=None):  # noqa: ARG001
+        woken.append(settings.local_llm_model)
+        return True
+
+    monkeypatch.setattr(api, "warm_up_local_server", fake_warm_up)
+    context = AppContext(
+        store=store, controller=controller,
+        runner=DiagnosticsRunner(store=store), token=TOKEN, conversation=False,
+    )
+    with TestClient(create_app(context)) as started:
+        started.get("/health")
+        assert woken == [store.load().local_llm_model]
+
+        # Saving the settings again gives a new address the same head start.
+        body = store.load().model_dump(mode="json")
+        body["local_llm_url"] = "http://casa2:11434"
+        saved = started.put("/api/settings", json=body, headers={TOKEN_HEADER: TOKEN})
+        assert saved.status_code == 200
+    assert len(woken) == 2

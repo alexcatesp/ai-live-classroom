@@ -81,7 +81,29 @@ Ollama se instala directamente en Windows desde ollama.com. Para que escuche
 fuera de `localhost`, define la variable de entorno `OLLAMA_HOST=0.0.0.0` y
 reinícialo.
 
-**El modelo del aula.** La app usa `qwen3.8-aula`, una variante de
+**El modelo del aula: `gemma4-aula`.** Medido en la RTX 5070 Ti el 15/09/2026,
+con contexto de 8.192 y sin razonar, gemma4 gana a Qwen en todo lo que importa
+aquí:
+
+| | `qwen3.8-aula` | `gemma4-aula` |
+|---|---|---|
+| VRAM | 9,3 GB | **7,8 GB** |
+| Velocidad | 55 tok/s | **76 tok/s** |
+| Primera frase | ~1,4 s | **0,5–0,9 s** |
+| Respuesta | correcta | correcta, 74–90 palabras |
+
+Esos 1,5 GB de menos son los que permiten que Whisper y Kokoro compartan la
+tarjeta. Necesita **Ollama 0.34 o posterior**: la 0.33 no cargaba el componente
+de visión de gemma4 («Failed to load CLIP model»).
+
+```bash
+ollama create gemma4-aula -f docs/ollama/Modelfile.aula-gemma
+```
+
+Sin el `num_ctx` del Modelfile, Ollama le da 262.144 tokens de contexto y la
+caché se lleva 4,5 GB más.
+
+**La alternativa, `qwen3.8-aula`**, es una variante de
 `qwen3.8:27b` creada con [`ollama/Modelfile.aula`](ollama/Modelfile.aula):
 comparte los pesos, no ocupa más disco y fija un contexto de 8.192 tokens y un
 tope de 350 tokens por respuesta. El `qwen3.8:27b` original queda intacto para
@@ -128,6 +150,27 @@ del micrófono, con Silero decidiendo el final:
   tokens (≈ 0,6 GB más) sin arriesgarse a que Windows lo pase a la RAM.
 - La primera pregunta paga la carga de Whisper; calentar los tres servicios al
   arrancar la app lo evita (pendiente).
+
+**El techo de memoria dentro de Docker (15/09/2026).** Con los tres modelos en
+la GPU la tarjeta llega a 12,9–13,0 GB de 16,3, y aun así Whisper falla al
+transcribir con `CUDA failed with error out of memory`: la máquina virtual de
+WSL no puede usar los últimos ~3 GB que Windows reserva. Dos veces, además, el
+error se llevó por delante **todo el motor de Docker**, Kokoro incluido.
+
+Lo medido al buscar margen:
+
+- **Qwen con capas en la CPU no sirve:** 7 capas de 65 liberan 0,9 GB y bajan de
+  56 a 6 tokens/s. La voz se pararía entre frases.
+- **Whisper en la CPU funciona pero es lento:** 12–14 s por pregunta con
+  `large-v3-turbo`, 10 s con `medium`.
+- **Kokoro en la CPU:** 2,5 s una frase corta y 5,5 s una larga (2x tiempo
+  real), frente a 0,15 s en la GPU.
+- **El escritorio pesa:** con navegadores, Hermes y otras aplicaciones abiertas
+  ocupa 2,5–2,7 GB de la tarjeta; con el PC despejado, 1,5 GB.
+
+Mientras no haya más margen, la combinación estable es dejar en la CPU el
+servicio que menos duela, y el PC del servidor lo más despejado posible durante
+las clases.
 - La calidad en español es buena para clase, con alguna errata propia de 2 bits
   («explícamente»).
 
@@ -141,7 +184,7 @@ servidor** y rellena:
 | Transcripción (speaches) | `http://pc-casa:8000` |
 | Modelo de transcripción | `deepdml/faster-whisper-large-v3-turbo-ct2` |
 | Modelo de lenguaje (Ollama) | `http://pc-casa:11434` |
-| Modelo de Ollama | `qwen3.8-aula` |
+| Modelo de Ollama | `gemma4-aula` |
 | Voz (Kokoro) | `http://pc-casa:8880` |
 | Voz de Kokoro | `ef_dora` (también `em_alex`, `em_santa`) |
 

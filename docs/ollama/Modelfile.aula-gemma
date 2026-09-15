@@ -1,0 +1,18 @@
+# Gemma 4 12B for AI Classroom Live's local server (D-14).
+#
+#   ollama create gemma4-aula -f docs/ollama/Modelfile.aula-gemma
+#
+# The alternative to qwen3.8-aula, and the better fit on a 16 GB card: 7.8 GB
+# against 9.3, 76 tokens/s against 55, and a first sentence in 0.5-0.9 s
+# against 1.4 (measured on the RTX 5070 Ti, 15/09/2026). Those 1.5 GB are what
+# lets faster-whisper and Kokoro share the card with it.
+#
+# Needs Ollama 0.34 or newer: 0.33 could not load gemma4's vision component.
+
+FROM gemma4:12b
+
+# Ollama gives gemma4 a 262,144-token context by default, and the cache alone
+# then takes 4.5 GB. A class needs a few questions and answers of history.
+PARAMETER num_ctx 8192
+# A ceiling for an answer read aloud: about a minute and a half of speech.
+PARAMETER num_predict 350

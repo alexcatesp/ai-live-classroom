@@ -381,10 +381,30 @@ configuración.
 - **Qué se ingiere:** apuntes, ejercicios (sus soluciones ya se reparten),
   prácticas y la guía del curso. **Nunca** exámenes, banco de ítems ni rúbricas,
   ni documentos del profesor ni las fuentes originales.
-- **Primero BM25 local**, fragmentado por encabezados, **medido** con el banco de
-  ítems del examen como conjunto de evaluación: cada ítem está etiquetado con su
-  CE, igual que las secciones de los apuntes. El banco solo se usa para medir.
-  Si BM25 acierta poco, embeddings locales.
+- **BM25 local, fragmentado por encabezados. Medido y suficiente**
+  (`scripts/rag_eval.py`, 16/09/2026). Los apuntes, ejercicios y prácticas de
+  UT01 dan **91 secciones y 18.000 palabras**; las 59 preguntas del banco de
+  ítems sirven de conjunto de evaluación, porque cada ítem y cada sección llevan
+  el mismo criterio:
+
+  | | acierto |
+  |---|---|
+  | El CE correcto es el primer resultado | **91,5 %** |
+  | Está entre los tres primeros | **98,3 %** |
+  | Tiempo por búsqueda | 0,3 ms |
+
+  El único fallo es un ítem cuyo enunciado es «¿Cuál de estas afirmaciones es
+  correcta?»: el contenido está en las opciones, que la medición descarta.
+
+  Con preguntas habladas, más cortas, la sección correcta suele estar entre las
+  tres primeras, no siempre la primera. **De ahí la decisión: enviar las tres
+  mejores**, unos 2.000–3.000 tokens.
+
+  Lo que se aprendió midiendo: hace falta recortar terminaciones en español
+  («datos sesgados» tiene que llegar a «el sesgo»), y la guía del curso responde
+  bien a las preguntas de evaluación («¿cómo se entrega la práctica?»).
+  Embeddings locales quedan como plan B si en el aula aparecen preguntas que
+  BM25 no alcanza.
 - **En la nube, materiales desactivados por defecto** y, al activarlos, un aviso
   bien visible con el coste estimado por pregunta. El profesor usará el servidor
   local, y la nube sin materiales si no alcanza su PC desde el instituto.
